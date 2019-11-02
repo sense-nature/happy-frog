@@ -9,6 +9,9 @@
           Pond Overview  
         </h1>
       </v-flex>
+      <v-flex>
+        <v-btn to="/detail">Detail</v-btn>
+      </v-flex>
     </v-layout>
   </v-container>
 </template>
