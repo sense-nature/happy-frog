@@ -1,27 +1,36 @@
 <template>
   <v-app>
-    <v-app-bar app>
+    <v-toolbar app>
       <v-toolbar-title class="headline text-uppercase">
-        THis is the navigation
+        <span class="font-weight-light">Testpage</span>
       </v-toolbar-title>
-    </v-app-bar>
+      <v-spacer></v-spacer>
+      <v-toolbar-items class="hidden-sm-and-down">
+        <v-btn flat>
+          <router-link to="/">Home</router-link>
+        </v-btn>
+        <v-btn flat>
+          <router-link to="/about">About</router-link>
+        </v-btn>
+      </v-toolbar-items>
+    </v-toolbar>
 
     <v-content>
-      <HelloWorld/>
+      <router-view/>
     </v-content>
   </v-app>
 </template>
 
 <script>
-import HelloWorld from './components/HelloWorld';
 
 export default {
-  name: 'App',
+  name: "App",
   components: {
-    HelloWorld,
   },
-  data: () => ({
-    //
-  }),
+  data() {
+    return {
+      //
+    };
+  }
 };
 </script>
