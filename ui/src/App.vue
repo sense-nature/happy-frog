@@ -2,8 +2,9 @@
   <v-app>
     <nav>
       <v-toolbar app>
+          <Logo class="logo"/>
         <v-toolbar-title class="headline text-uppercase">
-          <span class="font-weight-light">Testpage</span>
+          <span class="font-weight-light">Lepond</span>
         </v-toolbar-title>
         <v-spacer></v-spacer>
         <v-toolbar-items class="hidden-sm-and-down">
@@ -20,9 +21,12 @@
 </template>
 
 <script>
+import Logo from './components/logo.vue';
 export default {
   name: "App",
-  components: {},
+  components: {
+    Logo,
+  },
   data() {
     return {
       //
