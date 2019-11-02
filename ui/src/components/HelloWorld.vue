@@ -5,6 +5,7 @@
         <h1 class="display-2 font-weight-bold mb-3">
           Pond Overview
         </h1>
+        <Map class="map"/>
       </v-flex>
       <v-flex>
         <v-dialog v-model="dialog" width="90vw">
@@ -33,7 +34,11 @@
 </template>
 
 <script>
+import Map from './map.vue';
 export default {
+  components: {
+    Map,
+  },
   data: () => ({
     snackbar: false,
     text: "ALERT: Pondy is too hot"
