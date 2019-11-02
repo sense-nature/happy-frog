@@ -1,17 +1,17 @@
 <template>
   <div>
-    <HelloWorld/>
+    <PlotlyChart/>
   </div>
 </template>
 
 <script>
 // @ is an alias to /src
-import HelloWorld from '@/components/HelloWorld.vue'
+import PlotlyChart from '@/components/PlotlyChart.vue'
 
 export default {
   name: 'home',
   components: {
-    HelloWorld
+    PlotlyChart
   }
 }
 </script>
