@@ -5,39 +5,89 @@ import base64
 import json
 import requests
 import argparse
+import logging
+
 
 BASE_URL = "http://www.opensensemap.org:8000/boxes/"
 
 # TODO: Set the correct ids
-SENSORS = {
+TEMP_SENSORS = {
     "happy-frog01": "",
     "happy-frog02": ""
 }
 
+PH_SENSORS = {
+    "happy-frog02": ""
+}
 
-def send_data_to_osm(app_id, device_id, temp, ts):
-    url = BASE_URL + SENSORS[device_id]
-    payload = {"value": temp}
+SENSOR_LOCATIONS = {
+    "happy-frog01": {
+        "lat": 47.53636, "lng": 7.55045, "height": 312.1
+
+    },
+    "happy-frog02": {
+        "lat": 47.536, "lng": 7.551, "height": 312.6
+    }
+}
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+
+def send_temp_to_osm(app_id, device_id, temp=None, ts=None):
+    if not temp:
+        logger.info("No temp data to send")
+        return
+    
+    url = BASE_URL + TEMP_SENSORS.get(device_id, "")
+    payload = {
+        "value": temp,
+        "location": SENSOR_LOCATIONS.get(device_id, None)
+        }
+    send_data_to_osm(url, payload)
+
+def send_ph_to_osm(app_id, device_id, ph=None, ts=None):
+    if not ph:
+        logger.info("No ph data to send")
+        return
+    
+    url = BASE_URL + PH_SENSORS.get(device_id, "")
+    payload = {
+        "value": ph,
+        "location": SENSOR_LOCATIONS.get(device_id, None)
+        }
+    send_data_to_osm(url, payload)
+    
+
+def send_data_to_osm(url, payload):
+    logger.debug(f"Sending {payload} to '{url}'")
     r = requests.post(url, json=payload)
     if r.status_code != 201:
-        print("Could not send temprature, " + r.status_code)
+        logger.error("Could not send data, " + r.status_code)
     else:
-        print(f"Sucess sending {temp} to {url}")
-
+        logger.info(f"Successful  sent {payload} to '{url}'")
 
 def uplink_callback(msg, client):
-    print(f"Received uplink from {msg.dev_id}")
+    logger.info(f"Received uplink from {msg.dev_id}")
     try:
         payload = base64.urlsafe_b64decode(msg.payload_raw)
+        logger.debug(f"Payload: {payload}")
         data = json.loads(payload.decode('utf-8'))
     except Exception as ex:
-        print(f"Error in parsing payload, cause: {ex}, payload={payload}")
+        logger.error(f"Error in parsing payload, cause: {ex}, payload={payload}")
         return
-    send_data_to_osm(msg.app_id, msg.dev_id, data['temperature'], None)
+    
+    try:
+        temp = data.get('temperature', None)
+        ph = data.get('ph', None)
+        send_temp_to_osm(msg.app_id, msg.dev_id, temp, None)
+        send_ph_to_osm(msg.app_id, msg.dev_id, ph, None)
+    except Exception as ex:
+        logger.error(f"Error in handling callback, {ex}")
 
 
 def run(app_id, access_key):
-    print(f"Start client on '{app_id}'\n")
+    logger.info(f"Start client on '{app_id}'\n")
     handler = ttn.HandlerClient(app_id, access_key)
     
     # using mqtt client
@@ -48,7 +98,7 @@ def run(app_id, access_key):
         while True:
             time.sleep(10)
     except KeyboardInterrupt:
-        print("Closing client, bye")
+        logger.info("Closing client, bye")
         mqtt_client.close()
 
 
