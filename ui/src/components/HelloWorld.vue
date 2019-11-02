@@ -10,7 +10,26 @@
         </h1>
       </v-flex>
       <v-flex>
-        <v-btn to="/detail">Detail</v-btn>
+        <v-dialog
+      v-model="dialog"
+      width="90vw"
+    >
+      <template v-slot:activator="{ on }">
+        <v-btn v-on="on">Detail</v-btn>
+      </template>
+      <v-card>
+        <v-card-title
+          class="headline grey lighten-2"
+          primary-title
+        >
+          PONDY the happiest pond in west pond cluster
+        </v-card-title>
+
+        <v-card-text>
+          HERE IS AN AMAZING CHART
+        </v-card-text>
+      </v-card>
+    </v-dialog>
       </v-flex>
     </v-layout>
   </v-container>
