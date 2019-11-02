@@ -31,6 +31,18 @@
       </v-card>
     </v-dialog>
       </v-flex>
+    <v-snackbar
+    color="error"
+        v-model="snackbar"
+        >
+        <strong>{{ text }}</strong>
+        <v-btn
+        text
+          @click="snackbar = false"
+        >
+          Close
+        </v-btn>
+    </v-snackbar>
     </v-layout>
   </v-container>
 </template>
@@ -38,7 +50,13 @@
 <script>
 export default {
   data: () => ({
-    
+    snackbar: false,
+    text: "ALERT: Pondy is too hot",
   }),
+  mounted: function () {
+  this.$nextTick(function () {
+    setInterval(() => this.snackbar = true, 10000);
+  })
+}
 };
 </script>
