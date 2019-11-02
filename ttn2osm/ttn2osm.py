@@ -68,20 +68,26 @@ def send_data_to_osm(url, payload):
         logger.info(f"Successful  sent {payload} to '{url}'")
 
 def uplink_callback(msg, client):
-    logger.info(f"Received uplink from {msg.dev_id}")
+    logger.info(f"Received uplink from {msg.dev_id}, {msg.payload_raw}")
     try:
-        payload = base64.urlsafe_b64decode(msg.payload_raw)
-        logger.debug(f"Payload: {payload}")
-        data = json.loads(payload.decode('utf-8'))
+        # Prevent python3 to convert bytes into ASCII chars
+        payload = base64.b64decode(msg.payload_raw).hex()
+        logger.debug(f"Payload: {payload}, {type(payload)}")
     except Exception as ex:
         logger.error(f"Error in parsing payload, cause: {ex}, payload={payload}")
         return
     
     try:
-        temp = data.get('temperature', None)
-        ph = data.get('ph', None)
+        # First byte represents the temprature
+        temp = int.from_bytes(bytearray.fromhex(payload[0:2]), byteorder='big', signed=True)
         send_temp_to_osm(msg.app_id, msg.dev_id, temp, None)
-        send_ph_to_osm(msg.app_id, msg.dev_id, ph, None)
+
+        # Second byte represents the ph value, may be missing
+        if len(payload) > 2:
+            ph = int.from_bytes(bytearray.fromhex(payload[2:4]), byteorder='big', signed=False)
+
+            # The ph value is multiplied with 10 to send single integers. We need to retransform it
+            send_ph_to_osm(msg.app_id, msg.dev_id, ph/10.0, None)
     except Exception as ex:
         logger.error(f"Error in handling callback, {ex}")
 
