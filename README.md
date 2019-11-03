@@ -26,6 +26,8 @@ Solution
 * Make the data publicly available
 * Build a web application to manage the ponds and inspect the data
 
+<img src="https://raw.githubusercontent.com/escodebar/happy-frog/master/architecture_happyfrog.png" width="100%">
+
 Additional resources
 --------------------
 * Communication layer: The Things Network
