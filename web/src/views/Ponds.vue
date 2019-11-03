@@ -38,19 +38,19 @@ export default {
     selected: null,
   }),
   methods: {
-    ...mapActions('ponds', ['getData']),
+    ...mapActions('ponds', ['getData', 'getPonds']),
+    getPondsData() {
+      this.ponds.forEach(pond => {
+        this.getData({sensorID: pond.sensorID, senseBoxID: pond.senseBoxID});
+      });
+    },
     select(item) {
       this.selected = item;
       this.$refs.map.mapObject.panTo(item.center);
     },
   },
   beforeMount() {
-    this.ponds.forEach(pond => {
-      this.getData({sensorID: pond.sensorID, senseBoxID: pond.senseBoxID});
-    });
-    if (this.ponds.length > 0) {
-      this.selected = this.ponds[0];
-    }
+    this.getPonds().then(this.getPondsData);
   },
 };
 </script>
