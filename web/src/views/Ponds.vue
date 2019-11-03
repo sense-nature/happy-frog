@@ -15,7 +15,13 @@
         </v-card>
       </v-col>
       <v-col cols="6">
-        <PondPlot :pond="selected" />
+        <v-card>
+          <PondPlot
+            :sensor="sensor"
+            v-for="sensor in selected.sensorIDs"
+            :key="sensor"
+          />
+        </v-card>
       </v-col>
     </v-row>
   </v-container>
@@ -43,7 +49,7 @@ export default {
     ...mapActions('ponds', ['getData', 'getPonds']),
     getPondsData() {
       this.ponds.forEach(pond => {
-        this.getData({sensorID: pond.sensorID, senseBoxID: pond.senseBoxID});
+        this.getData(pond);
       });
     },
     select(item) {

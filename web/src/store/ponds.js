@@ -4,24 +4,38 @@ import Vue from 'vue';
 const state = {
   data: {},
   ponds: [],
+  sensors: {},
 };
 const getters = {
   ponds: state => state.ponds,
   data: state => state.data,
+  sensors: state => state.sensors,
 };
 const actions = {
-  getData: ({commit}, {sensorID, senseBoxID}) => {
+  getData: ({commit}, item) =>
     rest
-      .getData({sensorID, senseBoxID})
-      .then(data => commit('addData', {sensorID, data}));
-  },
-  getPonds: ({commit}) => {
-    rest.getPonds().then(data => commit('setPonds', data));
-  },
+      .getData(item)
+      .then(payloads =>
+        payloads.forEach(payload => commit('addData', payload)),
+      ),
+  getPonds: ({commit}) =>
+    rest.getPonds().then(data => {
+      commit(
+        'setSensors',
+        data
+          .reduce((acc, pond) => acc.concat(pond.sensors), [])
+          .reduce((acc, sensor) => {
+            acc[sensor._id] = sensor;
+            return acc;
+          }, {}),
+      );
+      commit('setPonds', data);
+    }),
 };
 const mutations = {
   addData: (state, {sensorID, data}) => Vue.set(state.data, sensorID, data),
   setPonds: (state, ponds) => (state.ponds = ponds),
+  setSensors: (state, sensors) => (state.sensors = sensors),
 };
 
 export default {
