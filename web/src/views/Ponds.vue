@@ -48,6 +48,9 @@ export default {
     this.ponds.forEach(pond => {
       this.getData({sensorID: pond.sensorID, senseBoxID: pond.senseBoxID});
     });
+    if (this.ponds.length > 0) {
+      this.selected = this.ponds[0];
+    }
   },
 };
 </script>
