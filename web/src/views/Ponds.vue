@@ -2,15 +2,17 @@
   <v-container>
     <v-row>
       <v-col cols="6">
-        <LMap class="map" ref="map" :center="[47.5358, 7.55047]" :zoom="18">
-          <LTileLayer :url="'http://{s}.tile.osm.org/{z}/{x}/{y}.png'" />
-          <LMarker
-            :lat-lng="item.center"
-            v-for="(item, key) in ponds"
-            :key="key"
-            @click="select(item)"
-          />
-        </LMap>
+        <v-card>
+          <LMap class="map" ref="map" :center="[47.5358, 7.55047]" :zoom="18">
+            <LTileLayer :url="'http://{s}.tile.osm.org/{z}/{x}/{y}.png'" />
+            <LMarker
+              :lat-lng="item.center"
+              v-for="(item, key) in ponds"
+              :key="key"
+              @click="select(item)"
+            />
+          </LMap>
+        </v-card>
       </v-col>
       <v-col cols="6">
         <PondPlot :pond="selected" />
