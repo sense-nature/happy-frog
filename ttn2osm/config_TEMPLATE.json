@@ -1,0 +1,41 @@
+{
+    "boxes": [
+        {
+            "id": "happy-frog01",
+            "box_id": "PLEASE_FILL_IN",
+            "location":  {
+                "lat": 47.53636,
+                "lng": 7.55045,
+                "height": 312.1
+            },
+            "sensors": [
+                {
+                    "id": "PLEASE_FILL_IN",
+                    "phenomenon": "temp"
+                }
+            ]
+        },
+        {
+            "id": "happy-frog02",
+            "box_id": "PLEASE_FILL_IN",
+            "location":  {
+                "lat": 47.53602,
+                "lng": 7.55108,
+                "height": 312.6
+            },
+            "sensors": [
+                {
+                    "id": "PLEASE_FILL_IN",
+                    "phenomenon": "temp"
+                },
+                {
+                    "id": "PLEASE_FILL_IN",
+                    "phenomenon": "ph"
+                }
+            ]
+        }
+
+    ],
+    "api_id": "PLEASE_FILL_IN",
+    "access_key": "PLEASE_FILL_IN"
+}
