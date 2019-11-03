@@ -23,5 +23,13 @@ export default {
     Header,
     Navigation,
   },
+  watch: {
+    $route(to) {
+      document.title = `${to.meta.title} - Happy Frog` || 'Happy Frog';
+    },
+  },
+  created() {
+    document.title = `${this.$route.meta.title} - Happy Frog`;
+  },
 };
 </script>
