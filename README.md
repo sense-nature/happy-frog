@@ -16,8 +16,9 @@ bringing love to amphibians
 
 Problem
 -------
-To study amphibian population biologists require historical data of the water from the ponds.
-This data is not easily available and collecting it is a tidious and manual task.
+Scientists require historical data on water properties which is not easily available and its collection is a tedious and manual task.
+For instance biologists who study amphibian life require pH and temperature measurements of pond water.
+Another example is climate scientists which are interested in changes of temperature over time.
 
 Solution
 --------
