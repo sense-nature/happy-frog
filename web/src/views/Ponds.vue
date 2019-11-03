@@ -2,9 +2,11 @@
   <v-container>
     <v-row>
       <v-col cols="6">
-        <v-card>
-          <LMap class="map" ref="map" :center="[47.5358, 7.55047]" :zoom="18">
-            <LTileLayer :url="'http://{s}.tile.osm.org/{z}/{x}/{y}.png'" />
+        <v-card height="100%">
+          <LMap ref="map" :center="[47.5358, 7.55047]" :zoom="18">
+            <LTileLayer
+              :url="'http://{s}.tile.osm.org/{z}/{x}/{y}.png'"
+            />
             <LMarker
               :lat-lng="item.center"
               v-for="(item, key) in ponds"
@@ -18,7 +20,7 @@
         <v-card>
           <PondPlot
             :sensor="sensor"
-            v-for="sensor in selected.sensorIDs"
+            v-for="sensor in sensorIDs"
             :key="sensor"
           />
         </v-card>
@@ -41,9 +43,14 @@ export default {
   },
   computed: {
     ...mapGetters('ponds', ['ponds', 'data']),
+    sensorIDs() {
+      return this.selected === null ? [] : this.selected.sensorIDs;
+    },
   },
   data: () => ({
     selected: null,
+    intervalResize: null,
+    intervalData: null,
   }),
   methods: {
     ...mapActions('ponds', ['getData', 'getPonds']),
@@ -67,11 +74,19 @@ export default {
   beforeMount() {
     this.getPonds().then(this.getPondsData);
   },
+  created() {
+    this.intervalResize = setInterval(() => {
+      window.dispatchEvent(new Event('resize'));
+    }, 1000);
+    this.intervalData = setInterval(() => {
+      this.getPondsData();
+    }, 30000);
+  },
+  beforeDestroy() {
+    clearInterval(this.intervalResize);
+    clearInterval(this.intervalData);
+    this.intervalResize = null;
+    this.intervalData = null;
+  },
 };
 </script>
-
-<style scoped>
-.map {
-  height: calc(100vh - 150px);
-}
-</style>
