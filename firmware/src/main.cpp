@@ -44,8 +44,12 @@ String STemp;
 String SPH;
 float TempMean = 0;
 float PHMean = 0;
-int8_t TempLora = 0;
-uint8_t PHLora = 0;
+int16_t TempLora = 0;
+uint16_t PHLora = 0;
+uint8_t TempLoraHigh = 0;
+uint8_t TempLoraLow = 0;
+uint8_t PHLoraHigh = 0;
+uint8_t PHLoraLow = 0;
 
 
 /*************************************
@@ -66,7 +70,7 @@ static osjob_t sendjob;
 
 // Schedule TX every this many seconds (might become longer due to duty
 // cycle limitations).
-const unsigned TX_INTERVAL = 60;
+const unsigned TX_INTERVAL = 30;
 char TTN_response[30];
 
 // Pin mapping
@@ -79,10 +83,15 @@ const lmic_pinmap lmic_pins = {
 
 void do_send(osjob_t* j){
     // Payload to send (uplink)
-    TempLora = (int8_t)TempMean;        // Teperatur range -127 ... 126
-    PHMean *= 10;
-    PHLora = (uint8_t)PHMean;           // PH range 0 ... 140 (devide by 10 for actual value)
-    uint8_t message[] = {TempLora,PHLora};   // I know sending a signed int with a unsigned int is not good.
+    TempMean *= 100;
+    TempLora = (int16_t)TempMean;        // Teperatur range -127.00 ... 126.00
+    TempLoraHigh = TempLora >> 8;
+    TempLoraLow = TempLora & 0x00FF; 
+    PHMean *= 100;
+    PHLora = (uint16_t)PHMean;           // PH range 0 ... 140 (devide by 10 for actual value)
+    PHLoraHigh = PHLora >> 8;
+    PHLoraLow = PHLora & 0x00FF;
+    uint8_t message[] = {TempLoraHigh,TempLoraLow,PHLoraHigh,PHLoraLow};   // I know sending a signed int with a unsigned int is not good.
 
     // Check if there is not a current TX/RX job running
     if (LMIC.opmode & OP_TXRXPEND) {
