@@ -29,7 +29,7 @@ The sensors should always send 4 bytes. If not the data will be discarded.
 
 | Bytes | Value       | Signed |
 | ----- |:------------|:-------|
-| 0 - 1 | Temperature | True   |
-| 2 - 4 | pH          | False  |
+| [0,1] | Temperature | True   |
+| [2,3] | pH          | False  |
 
 The temperature as the pH values need to be divided by 100 to get the real value.

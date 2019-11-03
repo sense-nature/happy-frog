@@ -2,7 +2,7 @@
     "boxes": [
         {
             "id": "happy-frog01",
-            "box_id": "PLEASE_FILL_IN",
+            "box_id": "HAPPY_FROG_01_BOX_ID",
             "location":  {
                 "lat": 47.53636,
                 "lng": 7.55045,
@@ -10,14 +10,14 @@
             },
             "sensors": [
                 {
-                    "id": "PLEASE_FILL_IN",
+                    "id": "HAPPY_FROG_01_TEMP_SENSOR_ID",
                     "phenomenon": "temp"
                 }
             ]
         },
         {
             "id": "happy-frog02",
-            "box_id": "PLEASE_FILL_IN",
+            "box_id": "HAPPY_FROG_02_BOX_ID",
             "location":  {
                 "lat": 47.53602,
                 "lng": 7.55108,
@@ -25,17 +25,17 @@
             },
             "sensors": [
                 {
-                    "id": "PLEASE_FILL_IN",
+                    "id": "HAPPY_FROG_02_TEMP_SENSOR_ID",
                     "phenomenon": "temp"
                 },
                 {
-                    "id": "PLEASE_FILL_IN",
+                    "id": "HAPPY_FROG_02_PH_SENSOR_ID",
                     "phenomenon": "ph"
                 }
             ]
         }
 
     ],
-    "api_id": "PLEASE_FILL_IN",
-    "access_key": "PLEASE_FILL_IN"
+    "api_id": "APP_ID",
+    "access_key": "ACCESS_KEY"
 }
