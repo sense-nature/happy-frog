@@ -1,7 +1,7 @@
-FROM node:12-alpine as build-stage
+FROM node:12.9.1-alpine as build-stage
 WORKDIR /app
 COPY package*.json ./
-RUN npm install --production
+RUN npm install
 COPY . .
 RUN npm run build
 
