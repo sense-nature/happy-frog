@@ -22,6 +22,6 @@ install: true # no-op
 script:
 - |
   set -ex;
-  docker build -t "${IMAGE}:${TRAVIS_COMMIT}" ./ui && \
+  docker build -t "${IMAGE}:${TRAVIS_COMMIT}" ./web && \
   docker push "${IMAGE}:${TRAVIS_COMMIT}" && \
   set +x
