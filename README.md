@@ -16,11 +16,14 @@ bringing love to amphibians
 
 Problem
 -------
+To study amphibian population biologists require historical data of the water from the ponds.
+This data is not easily available and collecting it is a tidious and manual task.
 
 Solution
 --------
-* Provide the hardware to measure the necessary data and make it publicly available
-* Build a web application to manage the ponds and view the data
+* Provide the hardware to measure the necessary data automatically
+* Make the data publicly available
+* Build a web application to manage the ponds and inspect the data
 
 Additional resources
 --------------------
