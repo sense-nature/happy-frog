@@ -49,6 +49,13 @@ export default {
       this.$refs.map.mapObject.panTo(item.center);
     },
   },
+  watch: {
+    ponds() {
+      if (this.ponds.length > 0 && this.selected === null) {
+        this.selected = this.ponds[0];
+      }
+    },
+  },
   beforeMount() {
     this.getPonds().then(this.getPondsData);
   },
