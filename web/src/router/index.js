@@ -11,19 +11,23 @@ const routes = [
     name: 'ponds',
     path: '/ponds',
     component: Ponds,
-    meta: {icon: 'mdi-waves', title: 'Ponds'},
+    meta: {icon: 'mdi-waves', title: 'Ponds', navigation: true},
   },
   {
     name: 'contribute',
     path: '/contribute',
     component: Contribute,
-    meta: {icon: 'mdi-help', title: 'Contribute'},
+    meta: {icon: 'mdi-hand-heart', title: 'Contribute', navigation: true},
   },
   {
     name: 'about',
     path: '/about',
     component: About,
-    meta: {icon: 'mdi-information', title: 'About'},
+    meta: {icon: 'mdi-information', title: 'About', navigation: true},
+  },
+  {
+    path: '/',
+    redirect: {name: 'ponds'},
   },
 ];
 

@@ -31,7 +31,9 @@
 export default {
   computed: {
     items() {
-      return this.$router.options.routes;
+      return this.$router.options.routes.filter(
+        route => 'meta' in route && route.meta.navigation,
+      );
     },
   },
 };
