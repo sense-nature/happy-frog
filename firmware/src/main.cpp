@@ -121,6 +121,9 @@ void onEvent (ev_t ev) {
         if (LMIC.txrxFlags & TXRX_ACK) {
           Serial.println(F("Received ack"));
           display.drawString (0, 20, "Received ACK.");
+        } else {
+          Serial.println(F("No ack received"));
+          display.drawString (0, 20, "No ACK received.");
         }
 
         if (LMIC.dataLen) {
@@ -136,6 +139,7 @@ void onEvent (ev_t ev) {
           TTN_response[i] = 0;
           display.drawString (0, 32, String(TTN_response));
         }
+          
 
         // Schedule next transmission
         os_setTimedCallback(&sendjob, os_getTime()+sec2osticks(TX_INTERVAL), do_send);
