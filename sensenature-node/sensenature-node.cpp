@@ -39,22 +39,17 @@ const uint8_t bufferlen = 32;                         //total buffer size for th
 char response_data[bufferlen];
 String inputstring = "";
 
-#define MY_ONEWIRE_PIN 13
-OneWire oneWire(MY_ONEWIRE_PIN);
-DallasTemperature ds18b20(&oneWire);
-float last_temp;
+#define MY_ONEWIRE_PIN 12
+
+
 
 // Data Variable for PH and Temp
 String STemp;
 String SPH;
 float TempMean = 0;
 float PHMean = 0;
-int16_t TempLora = 0;
-uint16_t PHLora = 0;
-uint8_t TempLoraHigh = 0;
-uint8_t TempLoraLow = 0;
-uint8_t PHLoraHigh = 0;
-uint8_t PHLoraLow = 0;
+
+uint16_t batteryVoltage = 0; //[mV]
 
 
 /*************************************
@@ -91,7 +86,7 @@ unsigned long startTime, endTime;
 
 
 #define uS_TO_S_FACTOR 1000000ULL  /* Conversion factor for micro seconds to seconds */
-#define TIME_TO_SLEEP  30        /* Time ESP32 will go to sleep (in seconds) */
+#define TIME_TO_SLEEP  (15*60)        /* Time ESP32 will go to sleep (in seconds) */
 
 RTC_DATA_ATTR int bootCount = 0;
 
@@ -144,6 +139,25 @@ void onSent(void *pUserData, int fSuccess){
 
 }
 
+uint8_t getHigh(int16_t val){
+
+	return (val & 0xFF00) >> 8;
+}
+
+uint8_t getHigh(uint16_t val){
+	return (val & 0xFF00) >> 8;
+}
+
+
+int8_t getLow(int16_t val){
+	return val & 0xFF;
+}
+uint8_t getLow(uint16_t val){
+	return val & 0xFF;
+}
+
+
+
 void do_send(osjob_t* j){
     // Payload to send (uplink)
     Heltec.display->clear();
@@ -157,17 +171,22 @@ void do_send(osjob_t* j){
     //Serial.println("Setup ESP32 to sleep for every " + String(TIME_TO_SLEEP) + "s");
 
 	uint8_t serialNo = 0x01;
-	TempMean = 18.31;
-    TempMean *= 100;
-    TempLora = (int16_t)TempMean;        // Teperatur range -127.00 ... 126.00
-    TempLoraHigh = TempLora >> 8;
-    TempLoraLow = TempLora & 0x00FF;
+
+	int16_t TempLora = (int16_t)(TempMean * 100);        // Teperatur range -127.00 ... 126.00
+
     PHMean = 5.54;
-    PHMean *= 100;
-    PHLora = (uint16_t)PHMean;           // PH range 0 ... 140 (devide by 10 for actual value)
-    PHLoraHigh = PHLora >> 8;
-    PHLoraLow = PHLora & 0x00FF;
-    uint8_t message[] = {TempLoraHigh,TempLoraLow,PHLoraHigh,PHLoraLow /*, serialNo*/};   // I know sending a signed int with a unsigned int is not good.
+    uint16_t PHLora = (uint16_t)(PHMean * 100);           // PH range 0 ... 140 (devide by 10 for actual value)
+
+
+
+    uint8_t message[] = {serialNo,
+			(uint8_t)(getHigh(TempLora)),
+			(uint8_t)(getLow(TempLora)),
+			getHigh(PHLora),
+			getLow(PHLora),
+			getHigh(batteryVoltage),
+			getLow(batteryVoltage)
+    };   // I know sending a signed int with a unsigned int is not good.
 
 	// Prepare upstream data transmission at the next possible time.
 	lmic_tx_error_t ret = LMIC_sendWithCallback(1, message, sizeof(message), 0, onSent, (void*)0);
@@ -189,10 +208,85 @@ int getChipRevision()
 }
 
 
+void readSensorData(){
+	OneWire oneWire(MY_ONEWIRE_PIN);
+	DallasTemperature ds18b20(&oneWire);
+	 ds18b20.begin();
+	 ds18b20.requestTemperatures();
+	 delay(750);
+	 uint8_t n = ds18b20.getDS18Count();
+	 if( n > 0 ){
+		 Serial.println("Detected "+String(n)+" DS18B20 sensors on the bus");
+	    ds18b20.setResolution(12);
+	    ds18b20.setWaitForConversion(true);
+		 uint8_t addr = 0;
+		 if( ds18b20.getAddress(&addr, 0 )){
+			 if(ds18b20.isConnected(&addr) ){
+				 Serial.println("DS18B20 @" + String(addr) + "connected");
+				 //ds18b20.requestTemperatures();
+				 //ds18b20.requestTemperaturesByAddress(&addr);
+				 //for now, we want to read only the first sensor
+				 TempMean = ds18b20.getTempC(&addr);
+				 STemp = String(TempMean);
+				 Serial.println("ds18b20: " + String(STemp) + " C");
+			 } else{
+				 Serial.println("ds18b20 @" + String(addr) + "is not connected");
+
+			 }
+		 } else {
+			 Serial.println("Cannot get address of the 0th ds18b20 sensor ");
+		 }
+	 } else {
+		 Serial.println("No ds18b20 detected on the bus");
+		 TempMean = 0.0;
+	 }
+	pinMode(21, OUTPUT);
+	digitalWrite(21, LOW);
+	delay(100);
+	//analogSetSamples(8);
+	pinMode(13,OPEN_DRAIN);
+	batteryVoltage = analogRead(13); // Reference voltage is 3v3 so maximum reading is 3v3 = 4095 in range 0 to 4095
+	Serial.println("Battery voltage reading: "+ String(batteryVoltage));
+/*
+	double voltage = -0.000000000000016 * pow(reading,4)
+	  + 0.000000000118171 * pow(reading,3)
+	  - 0.000000301211691 * pow(reading,2)
+	  + 0.001109019271794 * reading
+	  + 0.034143524634089;
+	voltage = 2.5 * reading / 4095.0 ;
+	batteryVoltage = (uint16_t)( voltage * 3.2 * 1000.0 );
+	digitalWrite(21,HIGH);
+*/
+	//Serial.print("Battery v, reading: ");
+	//Serial.println(reading);
+	//Serial.print("Battery v, calc value: ");
+	//Serial.println(batteryVoltage);
+
+
+	//Sensor
+	// put your setup code here, to run once:
+	  // Serial.begin(115200);
+	    ///  ph_serial.begin(9600, 22, 17);
+	  //inputstring.reserve(20);
+
+	  ///  ph_serial.print("*ok,0\r");
+	  //pH_sensor.send_cmd_no_resp("c,0");       //send the command to turn off continuous mode
+	                                           //in this case we arent concerned about waiting for the reply
+	  // delay(100);
+	  // pH_sensor.send_cmd_no_resp("*ok,0");     //send the command to turn off the *ok response
+	                                           //in this case we wont get a reply since its been turned off
+	  //delay(100);
+	  //pH_sensor.flush_rx_buffer();
+	  // pinMode(16, OUTPUT);
+	  // digitalWrite(16, HIGH);
+
+	    // Start job
+
+}
+
 void setup() {
 	startTime = millis();
     Heltec.begin(true, false);
-    delay(1500);
     bootCount++;
     // LMIC init
     os_init_ex(&lmic_pins);
@@ -213,7 +307,7 @@ void setup() {
     // Setting up channels should happen after LMIC_setSession, as that
     // configures the minimal channel set.
 
-
+/*
     LMIC_setupChannel(0, 868100000, DR_RANGE_MAP(EU868_DR_SF12, DR_SF7),  BAND_CENTI);      // g-band
     LMIC_setupChannel(1, 868300000, DR_RANGE_MAP(EU868_DR_SF12, EU868_DR_SF7B), BAND_CENTI);      // g-band
     LMIC_setupChannel(2, 868500000, DR_RANGE_MAP(EU868_DR_SF12, DR_SF7),  BAND_CENTI);      // g-band
@@ -246,24 +340,9 @@ void setup() {
     LMIC_setDrTxpow(DR_SF7,14);
     LMIC_startJoining();
 
-//Sensor
-// put your setup code here, to run once:
-  // Serial.begin(115200);
-    ///  ph_serial.begin(9600, 22, 17);
-  //inputstring.reserve(20);
 
-  ///  ph_serial.print("*ok,0\r");
-  //pH_sensor.send_cmd_no_resp("c,0");       //send the command to turn off continuous mode
-                                           //in this case we arent concerned about waiting for the reply
-  // delay(100);
-  // pH_sensor.send_cmd_no_resp("*ok,0");     //send the command to turn off the *ok response
-                                           //in this case we wont get a reply since its been turned off
-  //delay(100);
-  //pH_sensor.flush_rx_buffer();
-  // pinMode(16, OUTPUT);
-  // digitalWrite(16, HIGH);
+    readSensorData();
 
-    // Start job
     do_send(&sendjob);
 
 }
