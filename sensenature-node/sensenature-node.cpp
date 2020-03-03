@@ -40,7 +40,7 @@ char response_data[bufferlen];
 String inputstring = "";
 
 #define MY_ONEWIRE_PIN 12
-
+#define MY_VEXT_PIN 21
 
 
 // Data Variable for PH and Temp
@@ -56,11 +56,11 @@ uint16_t batteryVoltage = 0; //[mV]
  * TODO: Change the following keys
  * NwkSKey: network session key, AppSKey: application session key, and DevAddr: end-device address
  *************************************/
-static u1_t NWKSKEY[16] = { 0xA9, 0x2F, 0x7D, 0x2B, 0xCA, 0xB4, 0x71, 0x34, 0x0D, 0x6D, 0xAA, 0xED, 0x89, 0xBC, 0xE9, 0x4F };  // Paste here the key in MSB format
+static u1_t NWKSKEY[16] = { 0x0 };  // Paste here the key in MSB format
 
-static u1_t APPSKEY[16] = { 0x98, 0x92, 0xD5, 0xC0, 0xA8, 0x71, 0x20, 0x64, 0x52, 0x96, 0x41, 0xB4, 0xA2, 0x8E, 0x39, 0xA5 };  // Paste here the key in MSB format
+static u1_t APPSKEY[16] = { 0x0 };  // Paste here the key in MSB format
 
-static u4_t DEVADDR = 0x26011955;   // Put here the device id in hexadecimal form.
+static u4_t DEVADDR = 0x00000000;   // Put here the device id in hexadecimal form.
 
 void os_getArtEui (u1_t* buf) { }
 void os_getDevEui (u1_t* buf) { }
@@ -132,7 +132,7 @@ void onSent(void *pUserData, int fSuccess){
    Serial.println("Going to sleep now");
    Serial.flush();
 
-   esp_deep_sleep_start();
+
 
     // Schedule next transmission
     //os_setTimedCallback(&sendjob, os_getTime()+sec2osticks(TX_INTERVAL), do_send);
@@ -214,23 +214,33 @@ void readSensorData(){
 	 ds18b20.begin();
 	 ds18b20.requestTemperatures();
 	 delay(750);
+	 //ds18b20.requestTemperatures();
 	 uint8_t n = ds18b20.getDS18Count();
 	 if( n > 0 ){
 		 Serial.println("Detected "+String(n)+" DS18B20 sensors on the bus");
 	    ds18b20.setResolution(12);
 	    ds18b20.setWaitForConversion(true);
-		 uint8_t addr = 0;
-		 if( ds18b20.getAddress(&addr, 0 )){
-			 if(ds18b20.isConnected(&addr) ){
-				 Serial.println("DS18B20 @" + String(addr) + "connected");
+
+	    TempMean = ds18b20.getTempCByIndex(0);
+		 STemp = String(TempMean);
+
+		 Serial.println("ds18b20 temp by index: " + String(STemp) + " C");
+
+		 DeviceAddress addr;
+		 if( ds18b20.getAddress(addr, 0 )){
+			 if(ds18b20.isConnected(addr) ){
+				 Serial.print("DS18B20 @");
+				 for(int i=0; i<8;i++)
+					 Serial.print(String(addr[i])+":");
+				 Serial.println(" connected");
 				 //ds18b20.requestTemperatures();
 				 //ds18b20.requestTemperaturesByAddress(&addr);
 				 //for now, we want to read only the first sensor
-				 TempMean = ds18b20.getTempC(&addr);
+				 TempMean = ds18b20.getTempC(addr);
 				 STemp = String(TempMean);
 				 Serial.println("ds18b20: " + String(STemp) + " C");
 			 } else{
-				 Serial.println("ds18b20 @" + String(addr) + "is not connected");
+				 Serial.println("ds18b20 @found address is not connected");
 
 			 }
 		 } else {
@@ -240,8 +250,6 @@ void readSensorData(){
 		 Serial.println("No ds18b20 detected on the bus");
 		 TempMean = 0.0;
 	 }
-	pinMode(21, OUTPUT);
-	digitalWrite(21, LOW);
 	delay(100);
 	//analogSetSamples(8);
 	pinMode(13,OPEN_DRAIN);
@@ -287,6 +295,9 @@ void readSensorData(){
 void setup() {
 	startTime = millis();
     Heltec.begin(true, false);
+    pinMode(MY_VEXT_PIN,OUTPUT);
+    digitalWrite(MY_VEXT_PIN, LOW);
+
     bootCount++;
     // LMIC init
     os_init_ex(&lmic_pins);
@@ -344,6 +355,10 @@ void setup() {
     readSensorData();
 
     do_send(&sendjob);
+
+    digitalWrite(MY_VEXT_PIN, HIGH);
+
+    esp_deep_sleep_start();
 
 }
 
