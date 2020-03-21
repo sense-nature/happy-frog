@@ -11,6 +11,7 @@
 #include <FS.h>
 #include <SPIFFS.h>
 
+#include "ttn_keys.h"
 #include <lmic.h>
 #include <hal/hal.h>
 #include <heltec.h>
@@ -43,24 +44,18 @@ String inputstring = "";
 #define MY_VEXT_PIN 21
 
 
-// Data Variable for PH and Temp
-String STemp;
-String SPH;
-float TempMean = 0;
-float PHMean = 0;
+// Data Variable for Temperature
+#define N_TEMP 1
+float temp[N_TEMP] = {0};
+
 
 uint16_t batteryVoltage = 0; //[mV]
 
 
-/*************************************
- * TODO: Change the following keys
- * NwkSKey: network session key, AppSKey: application session key, and DevAddr: end-device address
- *************************************/
-static u1_t NWKSKEY[16] = { 0x0 };  // Paste here the key in MSB format
+extern u1_t NWKSKEY[16];
+extern u1_t APPSKEY[16];
+extern u4_t DEVADDR;
 
-static u1_t APPSKEY[16] = { 0x0 };  // Paste here the key in MSB format
-
-static u4_t DEVADDR = 0x00000000;   // Put here the device id in hexadecimal form.
 
 void os_getArtEui (u1_t* buf) { }
 void os_getDevEui (u1_t* buf) { }
@@ -86,7 +81,7 @@ unsigned long startTime, endTime;
 
 
 #define uS_TO_S_FACTOR 1000000ULL  /* Conversion factor for micro seconds to seconds */
-#define TIME_TO_SLEEP  (15*60)        /* Time ESP32 will go to sleep (in seconds) */
+#define TIME_TO_SLEEP  (1*60)        /* Time ESP32 will go to sleep (in seconds) */
 
 RTC_DATA_ATTR int bootCount = 0;
 
@@ -172,20 +167,17 @@ void do_send(osjob_t* j){
 
 	uint8_t serialNo = 0x01;
 
-	int16_t TempLora = (int16_t)(TempMean * 100);        // Teperatur range -127.00 ... 126.00
-
-    PHMean = 5.54;
-    uint16_t PHLora = (uint16_t)(PHMean * 100);           // PH range 0 ... 140 (devide by 10 for actual value)
-
+	int16_t tempLora0 = (int16_t)(roundf(temp[0] * 100.0));        // Teperatur range -127.00 ... 126.00
+	int16_t tempLora1 = (int16_t)(roundf(temp[1] * 100.0));        // Teperatur range -127.00 ... 126.00
 
 
     uint8_t message[] = {serialNo,
-			(uint8_t)(getHigh(TempLora)),
-			(uint8_t)(getLow(TempLora)),
-			getHigh(PHLora),
-			getLow(PHLora),
 			getHigh(batteryVoltage),
-			getLow(batteryVoltage)
+			getLow(batteryVoltage),
+    		(uint8_t)(getHigh(tempLora0)),
+			(uint8_t)(getLow(tempLora0)),
+    		(uint8_t)(getHigh(tempLora1)),
+			(uint8_t)(getLow(tempLora1)),
     };   // I know sending a signed int with a unsigned int is not good.
 
 	// Prepare upstream data transmission at the next possible time.
@@ -217,59 +209,40 @@ void readSensorData(){
 	 //ds18b20.requestTemperatures();
 	 uint8_t n = ds18b20.getDS18Count();
 	 if( n > 0 ){
-		 Serial.println("Detected "+String(n)+" DS18B20 sensors on the bus");
+		Serial.println("Detected "+String(n)+" DS18B20 sensors on the bus");
 	    ds18b20.setResolution(12);
 	    ds18b20.setWaitForConversion(true);
-
-	    TempMean = ds18b20.getTempCByIndex(0);
-		 STemp = String(TempMean);
-
-		 Serial.println("ds18b20 temp by index: " + String(STemp) + " C");
-
-		 DeviceAddress addr;
-		 if( ds18b20.getAddress(addr, 0 )){
-			 if(ds18b20.isConnected(addr) ){
-				 Serial.print("DS18B20 @");
-				 for(int i=0; i<8;i++)
-					 Serial.print(String(addr[i])+":");
-				 Serial.println(" connected");
-				 //ds18b20.requestTemperatures();
-				 //ds18b20.requestTemperaturesByAddress(&addr);
-				 //for now, we want to read only the first sensor
-				 TempMean = ds18b20.getTempC(addr);
-				 STemp = String(TempMean);
-				 Serial.println("ds18b20: " + String(STemp) + " C");
-			 } else{
-				 Serial.println("ds18b20 @found address is not connected");
-
+	    for(uint8_t i=0; i < min((uint8_t)N_TEMP,n) ; i++){
+			float t = ds18b20.getTempCByIndex(i);
+			Serial.println("ds18b20 temp by index="+String(i)+": " + String(t) + " C");
+			 DeviceAddress addr;
+			 if( ds18b20.getAddress(addr, i )){
+				 if(ds18b20.isConnected(addr) ){
+					 Serial.print("DS18B20 @");
+					 for(int j=0; j<8;j++)
+						 Serial.print(String(addr[j])+":");
+					 Serial.println(" connected");
+					 //ds18b20.requestTemperatures();
+					 //ds18b20.requestTemperaturesByAddress(&addr);
+					 //for now, we want to read only the first sensor
+					 temp[i] = ds18b20.getTempC(addr);
+					 Serial.println("ds18b20: " + String(temp[i]) + " C");
+				 } else{
+					 Serial.println("ds18b20 @found address is not connected");
+				 }
+			 } else {
+				 Serial.println("Cannot get address of the 0th ds18b20 sensor ");
 			 }
-		 } else {
-			 Serial.println("Cannot get address of the 0th ds18b20 sensor ");
-		 }
+	    }
 	 } else {
 		 Serial.println("No ds18b20 detected on the bus");
-		 TempMean = 0.0;
+
 	 }
 	delay(100);
 	//analogSetSamples(8);
 	pinMode(13,OPEN_DRAIN);
 	batteryVoltage = analogRead(13); // Reference voltage is 3v3 so maximum reading is 3v3 = 4095 in range 0 to 4095
 	Serial.println("Battery voltage reading: "+ String(batteryVoltage));
-/*
-	double voltage = -0.000000000000016 * pow(reading,4)
-	  + 0.000000000118171 * pow(reading,3)
-	  - 0.000000301211691 * pow(reading,2)
-	  + 0.001109019271794 * reading
-	  + 0.034143524634089;
-	voltage = 2.5 * reading / 4095.0 ;
-	batteryVoltage = (uint16_t)( voltage * 3.2 * 1000.0 );
-	digitalWrite(21,HIGH);
-*/
-	//Serial.print("Battery v, reading: ");
-	//Serial.println(reading);
-	//Serial.print("Battery v, calc value: ");
-	//Serial.println(batteryVoltage);
-
 
 	//Sensor
 	// put your setup code here, to run once:
@@ -304,7 +277,7 @@ void setup() {
      // Reset the MAC state. Session and pending data transfers will be discarded.
 	LMIC_reset();
 	LMIC_setClockError(MAX_CLOCK_ERROR * 3 / 100);
-	LMIC_setSession (0x13, DEVADDR, NWKSKEY, APPSKEY);
+	LMIC_setSession (0x13,  DEVADDR, NWKSKEY, APPSKEY);
 	LMIC_setSeqnoUp(bootCount);
 
 	//(bootCount);
