@@ -257,7 +257,6 @@ void readSensorData(){
 	 uint8_t n = ds18b20.getDS18Count();
 	 if( n > 0 ){
 		Serial.println("Detected "+String(n)+" DS18B20 sensors on the bus");
-	    ds18b20.setResolution(12);
 	    ds18b20.setWaitForConversion(true);
 	    for(uint8_t i=0; i < min((uint8_t)N_TEMP,n) ; i++){
 			float t = ds18b20.getTempCByIndex(i);
@@ -331,10 +330,10 @@ void setup() {
 		Serial.print("   ID of 0x56-0x58 represents a BMP 280,\n");
 		Serial.print("        ID of 0x60 represents a BME 280.\n");
 		Serial.print("        ID of 0x61 represents a BME 680.\n");
-		while (1) delay(10ul);
 	}
 
 	 ds18b20.begin();
+	 ds18b20.setResolution(12);
 	 ds18b20.requestTemperatures();
 
 
