@@ -7,55 +7,44 @@
 #define LMIC_DEBUG_LEVEL 2
 
 #include <Arduino.h>
+#include <pins_arduino.h>
 #include <SPI.h>
-#include <FS.h>
-#include <SPIFFS.h>
 
 #include "ttn_keys.h"
 #include <lmic.h>
 #include <hal/hal.h>
-#include <heltec.h>
+
+#include <oled/SSD1306Wire.h>
+//#include <heltec.h>
+
+#include <esp_sleep.h>
 #include "soc/efuse_reg.h"
 
-#define LEDPIN 2
-
-#define OLED_I2C_ADDR 0x3C
-#define OLED_RESET 16
-#define OLED_SDA 4
-#define OLED_SCL 15
-
-unsigned int counter = 0;
-
-
-//Sensor
+//Sensors
 #include <DallasTemperature.h>
 #include <OneWire.h>
-
 #include <SoftwareSerial.h>
-SoftwareSerial soft_serial;
+#include <Wire.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BME280.h>
 
-#define ph_serial soft_serial
 
-const uint8_t bufferlen = 32;                         //total buffer size for the response_data array
-char response_data[bufferlen];
-String inputstring = "";
 
-#define MY_ONEWIRE_PIN 12
-#define MY_VEXT_PIN 21
+SSD1306Wire display(0x3c, SDA_OLED, SCL_OLED, RST_OLED, GEOMETRY_64_32);
+Adafruit_BME280 bme;
 
+
+
+#define MY_ONEWIRE_PIN 	17
+OneWire oneWire(MY_ONEWIRE_PIN);
+DallasTemperature ds18b20(&oneWire);
 
 // Data Variable for Temperature
 #define N_TEMP 1
 float temp[N_TEMP] = {0};
 
 
-uint16_t batteryVoltage = 0; //[mV]
-
-
-extern u1_t NWKSKEY[16];
-extern u1_t APPSKEY[16];
-extern u4_t DEVADDR;
-
+uint16_t batteryVoltage = 0; //[12bit raw]
 
 void os_getArtEui (u1_t* buf) { }
 void os_getDevEui (u1_t* buf) { }
@@ -63,11 +52,46 @@ void os_getDevKey (u1_t* buf) { }
 
 static osjob_t sendjob;
 
+void LedON(){
+	pinMode(LED_BUILTIN,OUTPUT);
+	digitalWrite(LED_BUILTIN, HIGH);
+}
+
+void LedOFF(){
+	pinMode(LED_BUILTIN,OUTPUT);
+	digitalWrite(LED_BUILTIN, LOW);
+}
+
+
+void VextON(void)
+{
+	pinMode(Vext,OUTPUT);
+	digitalWrite(Vext, LOW);
+}
+
+void VextOFF(void) //Vext default OFF
+{
+	pinMode(Vext,OUTPUT);
+	digitalWrite(Vext, HIGH);
+}
+
+void ResetDisplay()
+{
+	pinMode(RST_OLED,OUTPUT);
+	digitalWrite(RST_OLED, LOW);
+	delay(50ul);
+	digitalWrite(RST_OLED, HIGH);
+}
+
+
 
 // Schedule TX every this many seconds (might become longer due to duty
 // cycle limitations).
 const unsigned TX_INTERVAL = 60;
 char TTN_response[30];
+
+
+
 
 // Pin mapping for Heltec Wireless Stick (taken from bastelgarage.ch, confirmed working)
 const lmic_pinmap lmic_pins = {
@@ -79,11 +103,11 @@ const lmic_pinmap lmic_pins = {
 
 unsigned long startTime, endTime;
 
-
 #define uS_TO_S_FACTOR 1000000ULL  /* Conversion factor for micro seconds to seconds */
 #define TIME_TO_SLEEP  (1*60)        /* Time ESP32 will go to sleep (in seconds) */
 
 RTC_DATA_ATTR int bootCount = 0;
+unsigned int counter = 0;
 
 
 const char *  get_wakeup_reason(){
@@ -109,17 +133,19 @@ void onSent(void *pUserData, int fSuccess){
    // Heltec.display->clear();
   Serial.write("Sending result: ");
    if( fSuccess){
-	   Heltec.display->drawString (30, 0, "OK");
+	   display.drawString (30, 0, "Sent: OK");
 	   Serial.println("OK");
    } else {
-	   Heltec.display->drawString (30, 0, "FAILED");
+	   display.drawString (30, 0, "Send: FAILED");
 	   Serial.println("FAILED");
    }
    // Schedule next transmission
    //os_setTimedCallback(&sendjob, os_getTime()+sec2osticks(TX_INTERVAL), do_send);
-   digitalWrite(LEDPIN, LOW);
-   Heltec.display->drawString (0, 10, "Package# "+ String (bootCount));
-   Heltec.display->display ();
+   LedOFF();
+
+
+   display.drawString (0, 10, "Package# "+ String (bootCount));
+   display.display ();
 
    LMIC_shutdown();
    unsigned long delta = millis() - startTime;
@@ -127,6 +153,9 @@ void onSent(void *pUserData, int fSuccess){
    Serial.println("Going to sleep now");
    Serial.flush();
 
+   VextOFF();
+
+   esp_deep_sleep_start();
 
 
     // Schedule next transmission
@@ -155,7 +184,7 @@ uint8_t getLow(uint16_t val){
 
 void do_send(osjob_t* j){
     // Payload to send (uplink)
-    Heltec.display->clear();
+    display.clear();
     Serial.print("Wake up #");
     Serial.print(bootCount);
     Serial.print(", reason: ");
@@ -185,27 +214,45 @@ void do_send(osjob_t* j){
 	if( ret != LMIC_ERROR_SUCCESS ){
 		Serial.println("Cannot register sending the LoRaWAN package. Error = "+String(ret));
 	} else {
-		digitalWrite(LEDPIN, HIGH);
+		LedON();
 		Serial.println("Sending uplink packet.");
-		Heltec.display->clear();
-		Heltec.display->drawString (0, 0, "SND...");
-		Heltec.display->display ();
+		display.clear();
+		display.drawString (0, 0, "SND...");
+		display.display ();
 	}
 }
 
 
-int getChipRevision()
-{
-  return (REG_READ(EFUSE_BLK0_RDATA3_REG) >> (EFUSE_RD_CHIP_VER_REV1_S)&&EFUSE_RD_CHIP_VER_REV1_V) ;
-}
+//
+//int getChipRevision()
+//{
+//  return (REG_READ(EFUSE_BLK0_RDATA3_REG) >> (EFUSE_RD_CHIP_VER_REV1_S)&&EFUSE_RD_CHIP_VER_REV1_V) ;
+//}
 
 
 void readSensorData(){
-	OneWire oneWire(MY_ONEWIRE_PIN);
-	DallasTemperature ds18b20(&oneWire);
-	 ds18b20.begin();
-	 ds18b20.requestTemperatures();
-	 delay(750);
+
+	Serial.print("Temperature = ");
+	Serial.print(bme.readTemperature());
+	Serial.println(" *C");
+
+	Serial.print("Pressure = ");
+
+	Serial.print(bme.readPressure() / 100.0F);
+	Serial.println(" hPa");
+
+	Serial.print("Humidity = ");
+	Serial.print(bme.readHumidity());
+	Serial.println(" %");
+
+	Serial.println();
+	Serial.println();
+
+//*/
+
+
+
+	 delay(750ul);
 	 //ds18b20.requestTemperatures();
 	 uint8_t n = ds18b20.getDS18Count();
 	 if( n > 0 ){
@@ -238,7 +285,7 @@ void readSensorData(){
 		 Serial.println("No ds18b20 detected on the bus");
 
 	 }
-	delay(100);
+	delay(100ul);
 	//analogSetSamples(8);
 	pinMode(13,OPEN_DRAIN);
 	batteryVoltage = analogRead(13); // Reference voltage is 3v3 so maximum reading is 3v3 = 4095 in range 0 to 4095
@@ -265,11 +312,42 @@ void readSensorData(){
 
 }
 
+
 void setup() {
 	startTime = millis();
-    Heltec.begin(true, false);
-    pinMode(MY_VEXT_PIN,OUTPUT);
-    digitalWrite(MY_VEXT_PIN, LOW);
+    //Heltec.begin(true, false);
+	Serial.begin(115200ul); // @suppress("Ambiguous problem")
+	Serial.flush();
+	delay(50ul);
+	Serial.println("Serial init done");
+
+	VextON();
+	Wire1.begin(SDA,SCL,400000);
+	bool status = bme.begin(0x76, &Wire1);
+	if (!status) {
+		Serial.println("Could not find a valid BME280 sensor, check wiring, address, sensor ID!");
+		Serial.print("SensorID was: 0x"); Serial.println(bme.sensorID(),16);
+		Serial.print("        ID of 0xFF probably means a bad address, a BMP 180 or BMP 085\n");
+		Serial.print("   ID of 0x56-0x58 represents a BMP 280,\n");
+		Serial.print("        ID of 0x60 represents a BME 280.\n");
+		Serial.print("        ID of 0x61 represents a BME 680.\n");
+		while (1) delay(10ul);
+	}
+
+	 ds18b20.begin();
+	 ds18b20.requestTemperatures();
+
+
+
+	display.init();
+	display.flipScreenVertically();
+	display.setFont(ArialMT_Plain_10);
+	display.drawString(0, 0, "OLED init!");
+	display.display();
+	Serial.println("OLED init done");
+
+
+
 
     bootCount++;
     // LMIC init
@@ -277,7 +355,7 @@ void setup() {
      // Reset the MAC state. Session and pending data transfers will be discarded.
 	LMIC_reset();
 	LMIC_setClockError(MAX_CLOCK_ERROR * 3 / 100);
-	LMIC_setSession (0x13,  DEVADDR, NWKSKEY, APPSKEY);
+	LMIC_setSession(0x13,  DEVADDR, NWKSKEY, APPSKEY);
 	LMIC_setSeqnoUp(bootCount);
 
 	//(bootCount);
@@ -329,9 +407,6 @@ void setup() {
 
     do_send(&sendjob);
 
-    digitalWrite(MY_VEXT_PIN, HIGH);
-
-    esp_deep_sleep_start();
 
 }
 
