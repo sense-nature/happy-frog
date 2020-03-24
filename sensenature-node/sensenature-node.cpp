@@ -37,7 +37,6 @@ Adafruit_BME280 bme;
 
 #define MY_ONEWIRE_PIN 	17
 OneWire oneWire(MY_ONEWIRE_PIN);
-DallasTemperature ds18b20(&oneWire);
 
 // Data Variable for Temperature
 #define N_TEMP 1
@@ -230,33 +229,32 @@ void do_send(osjob_t* j){
 //}
 
 
-void readSensorData(){
-
-	Serial.print("Temperature = ");
-	Serial.print(bme.readTemperature());
-	Serial.println(" *C");
-
-	Serial.print("Pressure = ");
-
-	Serial.print(bme.readPressure() / 100.0F);
-	Serial.println(" hPa");
-
-	Serial.print("Humidity = ");
-	Serial.print(bme.readHumidity());
-	Serial.println(" %");
-
-	Serial.println();
-	Serial.println();
-
-//*/
+// function to print a device address
+void printAddress(DeviceAddress deviceAddress)
+{
+  for (uint8_t i = 0; i < 8; i++)
+  {
+    // zero pad the address if necessary
+	  if(i>0)
+		  Serial.print(":");
+	  if (deviceAddress[i] < 16) Serial.print("0");
+	  	  Serial.print(deviceAddress[i], HEX);
+  }
+}
 
 
 
-	 delay(750ul);
+void readDS18B20Sensors(){
+	OneWire oneWire(MY_ONEWIRE_PIN);
+	DallasTemperature ds18b20(&oneWire);
+	 ds18b20.begin();
+	 ds18b20.requestTemperatures();
+	 delay(750u);
 	 //ds18b20.requestTemperatures();
 	 uint8_t n = ds18b20.getDS18Count();
 	 if( n > 0 ){
 		Serial.println("Detected "+String(n)+" DS18B20 sensors on the bus");
+	    ds18b20.setResolution(12);
 	    ds18b20.setWaitForConversion(true);
 	    for(uint8_t i=0; i < min((uint8_t)N_TEMP,n) ; i++){
 			float t = ds18b20.getTempCByIndex(i);
@@ -284,66 +282,67 @@ void readSensorData(){
 		 Serial.println("No ds18b20 detected on the bus");
 
 	 }
-	delay(100ul);
+	delay(100u);
 	//analogSetSamples(8);
 	pinMode(13,OPEN_DRAIN);
 	batteryVoltage = analogRead(13); // Reference voltage is 3v3 so maximum reading is 3v3 = 4095 in range 0 to 4095
 	Serial.println("Battery voltage reading: "+ String(batteryVoltage));
+}
 
-	//Sensor
-	// put your setup code here, to run once:
-	  // Serial.begin(115200);
-	    ///  ph_serial.begin(9600, 22, 17);
-	  //inputstring.reserve(20);
+void readBME280Sensor(){
+	Wire1.begin(SDA,SCL,400000);
+	bool status = bme.begin(0x76, &Wire1);
+		if (!status) {
+			Serial.println("Could not find a valid BME280 sensor, check wiring, address, sensor ID!");
+			Serial.print("SensorID was: 0x"); Serial.println(bme.sensorID(),16);
+			Serial.print("        ID of 0xFF probably means a bad address, a BMP 180 or BMP 085\n");
+			Serial.print("   ID of 0x56-0x58 represents a BMP 280,\n");
+			Serial.print("        ID of 0x60 represents a BME 280.\n");
+			Serial.print("        ID of 0x61 represents a BME 680.\n");
+		} else {
 
-	  ///  ph_serial.print("*ok,0\r");
-	  //pH_sensor.send_cmd_no_resp("c,0");       //send the command to turn off continuous mode
-	                                           //in this case we arent concerned about waiting for the reply
-	  // delay(100);
-	  // pH_sensor.send_cmd_no_resp("*ok,0");     //send the command to turn off the *ok response
-	                                           //in this case we wont get a reply since its been turned off
-	  //delay(100);
-	  //pH_sensor.flush_rx_buffer();
-	  // pinMode(16, OUTPUT);
-	  // digitalWrite(16, HIGH);
+	Serial.print("Temperature = ");
+	Serial.print(bme.readTemperature());
+	Serial.println(" *C");
 
-	    // Start job
+	Serial.print("Pressure = ");
 
+	Serial.print(bme.readPressure() / 100.0F);
+	Serial.println(" hPa");
+
+	Serial.print("Humidity = ");
+	Serial.print(bme.readHumidity());
+	Serial.println(" %");
+
+	Serial.println();
+	Serial.println();
+		}
+	//*/
 }
 
 
 void setup() {
 	startTime = millis();
+	VextON();
+
     //Heltec.begin(true, false);
 	Serial.begin(115200ul); // @suppress("Ambiguous problem")
 	Serial.flush();
 	delay(50ul);
 	Serial.println("Serial init done");
 
-	VextON();
-	Wire1.begin(SDA,SCL,400000);
-	bool status = bme.begin(0x76, &Wire1);
-	if (!status) {
-		Serial.println("Could not find a valid BME280 sensor, check wiring, address, sensor ID!");
-		Serial.print("SensorID was: 0x"); Serial.println(bme.sensorID(),16);
-		Serial.print("        ID of 0xFF probably means a bad address, a BMP 180 or BMP 085\n");
-		Serial.print("   ID of 0x56-0x58 represents a BMP 280,\n");
-		Serial.print("        ID of 0x60 represents a BME 280.\n");
-		Serial.print("        ID of 0x61 represents a BME 680.\n");
-	}
-
-	 ds18b20.begin();
-	 ds18b20.setResolution(12);
-	 ds18b20.requestTemperatures();
-
-
-
 	display.init();
 	display.flipScreenVertically();
 	display.setFont(ArialMT_Plain_10);
 	display.drawString(0, 0, "OLED init!");
 	display.display();
-	Serial.println("OLED init done");
+	Serial.println("OLED init2 done");
+	delay(2000u);
+
+    readDS18B20Sensors();
+    readBME280Sensor();
+
+
 
 
 
@@ -402,7 +401,7 @@ void setup() {
     LMIC_startJoining();
 
 
-    readSensorData();
+
 
     do_send(&sendjob);
 
