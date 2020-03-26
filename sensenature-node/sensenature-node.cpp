@@ -38,8 +38,12 @@ Adafruit_BME280 bme;
 #define MY_ONEWIRE_PIN  12
 
 // Data Variable for Temperature
-#define N_TEMP 2
+#define N_TEMP (sizeof(DS18B20_SENSORS)/sizeof(DS18B20_SENSORS[0]) )
 float temp[N_TEMP] = {0};
+
+uint8_t boxHumidity = 0;
+uint16_t boxPressure = 0;
+float boxTemperature = -127;
 
 
 uint16_t batteryVoltage = 0; //[12bit raw]
@@ -81,16 +85,6 @@ void ResetDisplay()
 	digitalWrite(RST_OLED, HIGH);
 }
 
-
-
-// Schedule TX every this many seconds (might become longer due to duty
-// cycle limitations).
-const unsigned TX_INTERVAL = 60;
-char TTN_response[30];
-
-
-
-
 // Pin mapping for Heltec Wireless Stick (taken from bastelgarage.ch, confirmed working)
 const lmic_pinmap lmic_pins = {
     .nss = 18,
@@ -105,10 +99,29 @@ unsigned long startTime, endTime;
 #define uS_TO_S_FACTOR 1000000ULL  /* Conversion factor for micro seconds to seconds */
 #define TIME_TO_SLEEP  (1*60)        /* Time ESP32 will go to sleep (in seconds) */
 
+uint8_t sessionStatus = 0;
 
 
-RTC_DATA_ATTR int bootCount = 0;
-unsigned int counter = 0;
+
+void resetStatus(){
+	sessionStatus = 0x00;
+}
+
+void setStatusWUNotFromDeepSleep( ){
+		sessionStatus |= 0x01;
+}
+
+void setStatusBME280Error(){
+	sessionStatus |= (0x01 << 1);
+}
+
+void setStatusDS18B20Error(uint8_t index){
+	sessionStatus |= (0x01 << (index+1));
+}
+
+
+
+RTC_DATA_ATTR uint32_t bootCount = 0;
 
 
 const char *  get_wakeup_reason(){
@@ -124,12 +137,14 @@ const char *  get_wakeup_reason(){
     case ESP_SLEEP_WAKEUP_TOUCHPAD : return "DSWU: touch"; break;
     case ESP_SLEEP_WAKEUP_ULP : return "DSWU: ULP"; break;
   }
+
+  setStatusWUNotFromDeepSleep();
   return sDefaultReason;
 }
 
 
 
-void onSent(void *pUserData, int fSuccess){
+void goToDeepSleep(void *pUserData, int fSuccess){
 
    // Heltec.display->clear();
   Serial.write("Sending result: ");
@@ -154,13 +169,12 @@ void onSent(void *pUserData, int fSuccess){
    Serial.println("Going to sleep now");
    Serial.flush();
 
-
    esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR - delta * mS_TO_S_FACTOR);
 
    VextOFF();
-
    esp_deep_sleep_start();
 }
+
 
 uint8_t getHigh(int16_t val){
 
@@ -181,18 +195,35 @@ uint8_t getLow(uint16_t val){
 
 
 
-void do_send(osjob_t* j){
+void pushTemperatureToMessage(std::vector<uint8_t> & vect, float fTemperature){
+	int16_t iTemp = (int16_t)roundf(fTemperature*100.0f);
+	vect.push_back(getHigh(iTemp));
+	vect.push_back(getLow(iTemp));
+}
+
+void do_send(osjob_t* j, void(*callBack)(void *, int)){
     // Payload to send (uplink)
 
     //Serial.println("Setup ESP32 to sleep for every " + String(TIME_TO_SLEEP) + "s");
 
-	uint8_t serialNo = 0x01;
+	uint8_t serialNo = DEVICE_SERIAL_NO;
 
-	int16_t tempLora0 = (int16_t)(roundf(temp[0] * 100.0));        // Teperatur range -127.00 ... 126.00
-	int16_t tempLora1 = (int16_t)(roundf(temp[1] * 100.0));        // Teperatur range -127.00 ... 126.00
+	std::vector<uint8_t> message;
+	message.push_back(serialNo);
+	message.push_back(sessionStatus);
+	message.push_back(getHigh(batteryVoltage));
+	message.push_back(getLow(batteryVoltage));
+	message.push_back(boxHumidity);
+	message.push_back(getHigh(boxPressure));
+	message.push_back(getLow(boxPressure));
+	pushTemperatureToMessage(message, boxTemperature);
 
+	for(int i=0 ; i< N_TEMP; i++)
+		pushTemperatureToMessage(message, temp[i]);
 
-    uint8_t message[] = {serialNo,
+	/*
+    uint8_t message[1+1+2+2+2*(N_TEMP)] = {serialNo,
+    		sessionStatus,
 			getHigh(batteryVoltage),
 			getLow(batteryVoltage),
     		(uint8_t)(getHigh(tempLora0)),
@@ -200,9 +231,10 @@ void do_send(osjob_t* j){
     		(uint8_t)(getHigh(tempLora1)),
 			(uint8_t)(getLow(tempLora1)),
     };   // I know sending a signed int with a unsigned int is not good.
+*/
 
 	// Prepare upstream data transmission at the next possible time.
-	lmic_tx_error_t ret = LMIC_sendWithCallback(1, message, sizeof(message), 0, onSent, (void*)0);
+	lmic_tx_error_t ret = LMIC_sendWithCallback(1, message.data(), message.size(), 0, callBack, (void*)0);
 	if( ret != LMIC_ERROR_SUCCESS ){
 		Serial.println("Cannot register sending the LoRaWAN package. Error = "+String(ret));
 	} else {
@@ -227,14 +259,19 @@ void printAddress(DeviceAddress deviceAddress)
 {
   for (uint8_t i = 0; i < 8; i++)
   {
-    // zero pad the address if necessary
+
 	  if(i>0)
-		  Serial.print(":");
+		  Serial.print(", 0x");
+	  else
+		  Serial.print("{ 0x");
 	  if (deviceAddress[i] < 16)
 		  Serial.print("0");
-	  	  Serial.print(deviceAddress[i], HEX);
+	  Serial.print(deviceAddress[i], HEX);
   }
+  Serial.print(" }");
 }
+
+
 
 
 
@@ -242,195 +279,151 @@ void readDS18B20Sensors(){
 	OneWire w1(MY_ONEWIRE_PIN);
 	DallasTemperature ds18b20(&w1);
 	ds18b20.begin();
+	ds18b20.setResolution(12);
+	ds18b20.setCheckForConversion(false);
 	ds18b20.requestTemperatures();
-	//
-	delay(750u);
 	 uint8_t n = ds18b20.getDS18Count();
+
 	 if( n > 0 ){
 		Serial.println("Detected "+String(n)+" DS18B20 sensor(s) on the bus");
-
-
-	    for(uint8_t i=0; i < min((uint8_t)N_TEMP,n) ; i++){
-			float t = ds18b20.getTempCByIndex(i);
-			Serial.println("ds18b20 temp by index="+String(i)+": " + String(t) + " *C");
-			 DeviceAddress addr;
-			 if( ds18b20.getAddress(addr, i )){
-				 if(ds18b20.isConnected(addr) ){
-					 Serial.print("DS18B20 @");
-					 printAddress(addr);
-					 temp[i] = ds18b20.getTempC(addr);
-					 Serial.println(" ds18b20: " + String(temp[i]) + " *C");
-				 } else{
-					 Serial.println("ds18b20 @found address is not connected");
-				 }
-			 } else {
-				 Serial.println("Cannot get address of the 0th ds18b20 sensor ");
+	    for(uint8_t i=0; i < N_TEMP ; i++){
+			 DeviceAddress addr = {0};
+			 memcpy(addr, DS18B20_SENSORS[i], sizeof(addr));;
+			 if(ds18b20.isConnected(addr) ){
+				 Serial.print("Temperature @ ");
+				 printAddress(addr);
+				 temp[i] = ds18b20.getTempC(addr);
+				 Serial.println(": " + String(temp[i]) + " *C");
+			 } else{
+				 setStatusDS18B20Error(i);
+				 Serial.print("ds18b20 @ ");
+				 printAddress(addr);
+				 Serial.println(" found address is not connected");
 			 }
 	    }
 	 } else {
+		 for(uint8_t i =0; i< N_TEMP; i++)
+			 setStatusDS18B20Error(i);
 		 Serial.println("No ds18b20 detected on the bus");
-
 	 }
-	delay(100u);
+}
+void readBatteryVoltage()
+{
 	//analogSetSamples(8);
 	pinMode(13,OPEN_DRAIN);
+	delay(10u);
 	batteryVoltage = analogRead(13); // Reference voltage is 3v3 so maximum reading is 3v3 = 4095 in range 0 to 4095
 	Serial.println("Battery voltage reading: "+ String(batteryVoltage));
 }
 
 void readBME280Sensor(){
 	bool status = bme.begin(0x76, &Wire);
-		if (!status) {
-			Serial.println("Could not find a valid BME280 sensor, check wiring, address, sensor ID!");
-		} else {
+	if (!status) {
+		Serial.println("Could not find a valid BME280 sensor, check wiring, address, sensor ID!");
+		setStatusBME280Error();
+	} else {
+		boxTemperature = bme.readTemperature();
+		Serial.print("Temperature = ");
+		Serial.print(boxTemperature);
+		Serial.println(" *C");
 
-	Serial.print("Temperature = ");
-	Serial.print(bme.readTemperature());
-	Serial.println(" *C");
+		Serial.print("Pressure = ");
 
-	Serial.print("Pressure = ");
+		boxPressure = roundf(bme.readPressure() / 100.0F);
+		Serial.print(boxPressure);
+		Serial.println(" hPa");
 
-	Serial.print(bme.readPressure() / 100.0F);
-	Serial.println(" hPa");
+		boxHumidity = roundf(bme.readHumidity());
+		Serial.print("Humidity = ");
+		Serial.print(boxHumidity);
+		Serial.println(" %");
+	}
 
-	Serial.print("Humidity = ");
-	Serial.print(bme.readHumidity());
-	Serial.println(" %");
-
-	Serial.println();
-	Serial.println();
-		}
-	//*/
 }
+
+void initLoRaWAN(u4_t seqNo) {
+	// LMIC init
+	os_init_ex(&lmic_pins);
+	// Reset the MAC state. Session and pending data transfers will be discarded.
+	LMIC_reset();
+	LMIC_setClockError(MAX_CLOCK_ERROR * 3 / 100);
+	// Set static session parameters. TTN network has id 0x13
+	LMIC_setSession(0x13, DEVADDR, NWKSKEY, APPSKEY);
+
+	LMIC_setSeqnoUp(seqNo);
+	//(bootCount);
+	// Set up the channels used by the Things Network, which corresponds
+	// to the defaults of most gateways. Without this, only three base
+	// channels from the LoRaWAN specification are used, which certainly
+	// works, so it is good for debugging, but can overload those
+	// frequencies, so be sure to configure the full frequency range of
+	// your network here (unless your network autoconfigures them).
+	// Setting up channels should happen after LMIC_setSession, as that
+	// configures the minimal channel set.
+	///*
+	 LMIC_setupChannel(0, 868100000, DR_RANGE_MAP(EU868_DR_SF12, DR_SF7),  BAND_CENTI);      // g-band
+	 LMIC_setupChannel(1, 868300000, DR_RANGE_MAP(EU868_DR_SF12, EU868_DR_SF7B), BAND_CENTI);      // g-band
+	 LMIC_setupChannel(2, 868500000, DR_RANGE_MAP(EU868_DR_SF12, DR_SF7),  BAND_CENTI);      // g-band
+	 LMIC_setupChannel(3, 867100000, DR_RANGE_MAP(EU868_DR_SF12, DR_SF7),  BAND_CENTI);      // g-band
+	 LMIC_setupChannel(4, 867300000, DR_RANGE_MAP(EU868_DR_SF12, DR_SF7),  BAND_CENTI);      // g-band
+	 LMIC_setupChannel(5, 867500000, DR_RANGE_MAP(EU868_DR_SF12, DR_SF7),  BAND_CENTI);      // g-band
+	 LMIC_setupChannel(6, 867700000, DR_RANGE_MAP(EU868_DR_SF12, DR_SF7),  BAND_CENTI);      // g-band
+	 LMIC_setupChannel(7, 867900000, DR_RANGE_MAP(EU868_DR_SF12, DR_SF7),  BAND_CENTI);      // g-band
+	 LMIC_setupChannel(8, 868800000, DR_RANGE_MAP(EU868_DR_FSK,  EU868_DR_FSK),  BAND_MILLI);      // g2-band
+
+	 //*/
+	// TTN defines an additional channel at 869.525Mhz using SF9 for class B
+	// devices' ping slots. LMIC does not have an easy way to define set this
+	// frequency and support for class B is spotty and untested, so this
+	// frequency is not configured here.
+	// Disable link check validation
+	LMIC_setLinkCheckMode(0);
+	// TTN uses SF9 for its RX2 window.
+	LMIC.dn2Dr = DR_SF9;
+	// Set data rate and transmit power for uplink (note: txpow seems to be ignored by the library)
+	//LMIC_setDrTxpow(DR_SF11,14);
+	//LMIC_setDrTxpow(DR_SF9,14);
+	LMIC_setDrTxpow(DR_SF7, 14);
+	LMIC_startJoining();
+}
+
+
+
 
 
 void setup() {
 	startTime = millis();
+	resetStatus();
 	VextON();
+	bootCount++;
 
-	Serial.begin(115200ul); // @suppress("Ambiguous problem")
+	Serial.begin(115200ul);
 	Serial.flush();
 	delay(50ul);
-	Serial.println("\n");
-	Serial.println("Serial init done");
+	Serial.print("Wake up #");
+    Serial.print(bootCount);
+    Serial.print(", reason: ");
+    Serial.println(get_wakeup_reason());
 
-    readDS18B20Sensors();
 
 	display.init();
 	display.flipScreenVertically();
 	display.setFont(ArialMT_Plain_10);
 	display.drawString(0, 0, "OLED init!");
 	display.display();
-
     display.clear();
-    Serial.print("Wake up #");
-    Serial.print(bootCount);
-    Serial.print(", reason: ");
-    Serial.println(get_wakeup_reason());
 
-
-    bootCount++;
-    // LMIC init
-    os_init_ex(&lmic_pins);
-     // Reset the MAC state. Session and pending data transfers will be discarded.
-	LMIC_reset();
-	LMIC_setClockError(MAX_CLOCK_ERROR * 3 / 100);
-	LMIC_setSession(0x13,  DEVADDR, NWKSKEY, APPSKEY);
-	LMIC_setSeqnoUp(bootCount);
-
-	//(bootCount);
-
-    // Set up the channels used by the Things Network, which corresponds
-    // to the defaults of most gateways. Without this, only three base
-    // channels from the LoRaWAN specification are used, which certainly
-    // works, so it is good for debugging, but can overload those
-    // frequencies, so be sure to configure the full frequency range of
-    // your network here (unless your network autoconfigures them).
-    // Setting up channels should happen after LMIC_setSession, as that
-    // configures the minimal channel set.
-
-/*
-    LMIC_setupChannel(0, 868100000, DR_RANGE_MAP(EU868_DR_SF12, DR_SF7),  BAND_CENTI);      // g-band
-    LMIC_setupChannel(1, 868300000, DR_RANGE_MAP(EU868_DR_SF12, EU868_DR_SF7B), BAND_CENTI);      // g-band
-    LMIC_setupChannel(2, 868500000, DR_RANGE_MAP(EU868_DR_SF12, DR_SF7),  BAND_CENTI);      // g-band
-    LMIC_setupChannel(3, 867100000, DR_RANGE_MAP(EU868_DR_SF12, DR_SF7),  BAND_CENTI);      // g-band
-    LMIC_setupChannel(4, 867300000, DR_RANGE_MAP(EU868_DR_SF12, DR_SF7),  BAND_CENTI);      // g-band
-    LMIC_setupChannel(5, 867500000, DR_RANGE_MAP(EU868_DR_SF12, DR_SF7),  BAND_CENTI);      // g-band
-    LMIC_setupChannel(6, 867700000, DR_RANGE_MAP(EU868_DR_SF12, DR_SF7),  BAND_CENTI);      // g-band
-    LMIC_setupChannel(7, 867900000, DR_RANGE_MAP(EU868_DR_SF12, DR_SF7),  BAND_CENTI);      // g-band
-    LMIC_setupChannel(8, 868800000, DR_RANGE_MAP(EU868_DR_FSK,  EU868_DR_FSK),  BAND_MILLI);      // g2-band
-
-    //*/
-
-    // TTN defines an additional channel at 869.525Mhz using SF9 for class B
-    // devices' ping slots. LMIC does not have an easy way to define set this
-    // frequency and support for class B is spotty and untested, so this
-    // frequency is not configured here.
-
-    // Set static session parameters.
-   // LMIC_setSession (0x1, DEVADDR, NWKSKEY, APPSKEY);
-
-    // Disable link check validation
-    LMIC_setLinkCheckMode(0);
-
-    // TTN uses SF9 for its RX2 window.
-    LMIC.dn2Dr = DR_SF9;
-
-    // Set data rate and transmit power for uplink (note: txpow seems to be ignored by the library)
-    //LMIC_setDrTxpow(DR_SF11,14);
-    //LMIC_setDrTxpow(DR_SF9,14);
-    LMIC_setDrTxpow(DR_SF7,14);
-    LMIC_startJoining();
-
-
+	//ds18b20 must be read before other init, in particular before i2c devices
+    readDS18B20Sensors();
+	initLoRaWAN(bootCount);
     readBME280Sensor();
-
-    do_send(&sendjob);
-
+    readBatteryVoltage();
+    do_send(&sendjob, goToDeepSleep);
 
 }
 
 
 void loop() {
-
 	//will not be called after the deepsleep wake up
      os_runloop_once();
-
-//Sensor
-// delay(1000);
- /*
-if (Serial.available() > 0) {                       //if we get data from the computer
-    inputstring = Serial.readStringUntil(13);                 //parse the data to either switch ports or send it to the circuit
-    if (inputstring != "") {                          //if we have a command for the modules
-      //pH_sensor.send_cmd(inputstring, response_data, bufferlen); // send it to the module of the port we opened
-      //Serial.println(response_data);                  //print the modules response
-      //response_data[0] = 0;                           //clear the modules response
-      Serial.println("send command: " + inputstring);
-      ph_serial.print(inputstring + "\r");
-      Serial.println("answer: " + ph_serial.readStringUntil(13));
-      // Serial.println(String(TempMean));
-    }
-  }
-
-*/
-// pH_sensor.send_read();
-  ///  ph_serial.print("r\r");                 // opens a connection to the Sensor
-  ///  SPH = ph_serial.readStringUntil(13);    // only one read possible than cloesd untill its opened again
-  ///Serial.println("pH: " + SPH);
-  ///PHMean += SPH.toFloat();
-  ///PHMean /= 2;
-
-  ///ds18b20.requestTemperatures();
-  //for now, we want to read only the first sensor
-  ///last_temp = ds18b20.getTempCByIndex(0);
-
-  /*
-  STemp = String(last_temp);
-  Serial.println("ds18b20: " + String(STemp) + "�C");
-  TempMean += STemp.toFloat();
-  TempMean /= 2;
-  Serial.println( String(PHMean) + " / " + String(TempMean));
-  //*/
-//	delay(1000);
-	//Serial.println("Next loop iteration. counter="+String(counter ));
 }
