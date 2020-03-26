@@ -35,11 +35,10 @@ Adafruit_BME280 bme;
 
 
 
-#define MY_ONEWIRE_PIN 	17
-OneWire oneWire(MY_ONEWIRE_PIN);
+#define MY_ONEWIRE_PIN  12
 
 // Data Variable for Temperature
-#define N_TEMP 1
+#define N_TEMP 2
 float temp[N_TEMP] = {0};
 
 
@@ -102,8 +101,11 @@ const lmic_pinmap lmic_pins = {
 
 unsigned long startTime, endTime;
 
+#define mS_TO_S_FACTOR 1000ULL   /*Conversion factor for mili to seconds*/
 #define uS_TO_S_FACTOR 1000000ULL  /* Conversion factor for micro seconds to seconds */
 #define TIME_TO_SLEEP  (1*60)        /* Time ESP32 will go to sleep (in seconds) */
+
+
 
 RTC_DATA_ATTR int bootCount = 0;
 unsigned int counter = 0;
@@ -152,14 +154,12 @@ void onSent(void *pUserData, int fSuccess){
    Serial.println("Going to sleep now");
    Serial.flush();
 
+
+   esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR - delta * mS_TO_S_FACTOR);
+
    VextOFF();
 
    esp_deep_sleep_start();
-
-
-    // Schedule next transmission
-    //os_setTimedCallback(&sendjob, os_getTime()+sec2osticks(TX_INTERVAL), do_send);
-
 }
 
 uint8_t getHigh(int16_t val){
@@ -183,13 +183,6 @@ uint8_t getLow(uint16_t val){
 
 void do_send(osjob_t* j){
     // Payload to send (uplink)
-    display.clear();
-    Serial.print("Wake up #");
-    Serial.print(bootCount);
-    Serial.print(", reason: ");
-    Serial.println(get_wakeup_reason());
-    esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR - 2228000);
-    //2228ms is the average work time (10 samplese)
 
     //Serial.println("Setup ESP32 to sleep for every " + String(TIME_TO_SLEEP) + "s");
 
@@ -237,7 +230,8 @@ void printAddress(DeviceAddress deviceAddress)
     // zero pad the address if necessary
 	  if(i>0)
 		  Serial.print(":");
-	  if (deviceAddress[i] < 16) Serial.print("0");
+	  if (deviceAddress[i] < 16)
+		  Serial.print("0");
 	  	  Serial.print(deviceAddress[i], HEX);
   }
 }
@@ -245,32 +239,27 @@ void printAddress(DeviceAddress deviceAddress)
 
 
 void readDS18B20Sensors(){
-	OneWire oneWire(MY_ONEWIRE_PIN);
-	DallasTemperature ds18b20(&oneWire);
-	 ds18b20.begin();
-	 ds18b20.requestTemperatures();
-	 delay(750u);
-	 //ds18b20.requestTemperatures();
+	OneWire w1(MY_ONEWIRE_PIN);
+	DallasTemperature ds18b20(&w1);
+	ds18b20.begin();
+	ds18b20.requestTemperatures();
+	//
+	delay(750u);
 	 uint8_t n = ds18b20.getDS18Count();
 	 if( n > 0 ){
-		Serial.println("Detected "+String(n)+" DS18B20 sensors on the bus");
-	    ds18b20.setResolution(12);
-	    ds18b20.setWaitForConversion(true);
+		Serial.println("Detected "+String(n)+" DS18B20 sensor(s) on the bus");
+
+
 	    for(uint8_t i=0; i < min((uint8_t)N_TEMP,n) ; i++){
 			float t = ds18b20.getTempCByIndex(i);
-			Serial.println("ds18b20 temp by index="+String(i)+": " + String(t) + " C");
+			Serial.println("ds18b20 temp by index="+String(i)+": " + String(t) + " *C");
 			 DeviceAddress addr;
 			 if( ds18b20.getAddress(addr, i )){
 				 if(ds18b20.isConnected(addr) ){
 					 Serial.print("DS18B20 @");
-					 for(int j=0; j<8;j++)
-						 Serial.print(String(addr[j])+":");
-					 Serial.println(" connected");
-					 //ds18b20.requestTemperatures();
-					 //ds18b20.requestTemperaturesByAddress(&addr);
-					 //for now, we want to read only the first sensor
+					 printAddress(addr);
 					 temp[i] = ds18b20.getTempC(addr);
-					 Serial.println("ds18b20: " + String(temp[i]) + " C");
+					 Serial.println(" ds18b20: " + String(temp[i]) + " *C");
 				 } else{
 					 Serial.println("ds18b20 @found address is not connected");
 				 }
@@ -290,15 +279,9 @@ void readDS18B20Sensors(){
 }
 
 void readBME280Sensor(){
-	Wire1.begin(SDA,SCL,400000);
-	bool status = bme.begin(0x76, &Wire1);
+	bool status = bme.begin(0x76, &Wire);
 		if (!status) {
 			Serial.println("Could not find a valid BME280 sensor, check wiring, address, sensor ID!");
-			Serial.print("SensorID was: 0x"); Serial.println(bme.sensorID(),16);
-			Serial.print("        ID of 0xFF probably means a bad address, a BMP 180 or BMP 085\n");
-			Serial.print("   ID of 0x56-0x58 represents a BMP 280,\n");
-			Serial.print("        ID of 0x60 represents a BME 280.\n");
-			Serial.print("        ID of 0x61 represents a BME 680.\n");
 		} else {
 
 	Serial.print("Temperature = ");
@@ -325,26 +308,25 @@ void setup() {
 	startTime = millis();
 	VextON();
 
-    //Heltec.begin(true, false);
 	Serial.begin(115200ul); // @suppress("Ambiguous problem")
 	Serial.flush();
 	delay(50ul);
+	Serial.println("\n");
 	Serial.println("Serial init done");
+
+    readDS18B20Sensors();
 
 	display.init();
 	display.flipScreenVertically();
 	display.setFont(ArialMT_Plain_10);
 	display.drawString(0, 0, "OLED init!");
 	display.display();
-	Serial.println("OLED init2 done");
-	delay(2000u);
 
-    readDS18B20Sensors();
-    readBME280Sensor();
-
-
-
-
+    display.clear();
+    Serial.print("Wake up #");
+    Serial.print(bootCount);
+    Serial.print(", reason: ");
+    Serial.println(get_wakeup_reason());
 
 
     bootCount++;
@@ -401,7 +383,7 @@ void setup() {
     LMIC_startJoining();
 
 
-
+    readBME280Sensor();
 
     do_send(&sendjob);
 
