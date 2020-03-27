@@ -194,47 +194,31 @@ uint8_t getLow(uint16_t val){
 }
 
 
+void push2BytesToMessage(std::vector<uint8_t> & vect, int16_t iValue){
+	vect.push_back(getHigh(iValue));
+	vect.push_back(getLow(iValue));
+}
 
 void pushTemperatureToMessage(std::vector<uint8_t> & vect, float fTemperature){
 	int16_t iTemp = (int16_t)roundf(fTemperature*100.0f);
-	vect.push_back(getHigh(iTemp));
-	vect.push_back(getLow(iTemp));
+	push2BytesToMessage(vect, iTemp);
 }
 
 void do_send(osjob_t* j, void(*callBack)(void *, int)){
     // Payload to send (uplink)
-
-    //Serial.println("Setup ESP32 to sleep for every " + String(TIME_TO_SLEEP) + "s");
-
 	uint8_t serialNo = DEVICE_SERIAL_NO;
-
 	std::vector<uint8_t> message;
-	message.push_back(serialNo);
 	message.push_back(sessionStatus);
-	message.push_back(getHigh(batteryVoltage));
-	message.push_back(getLow(batteryVoltage));
+	push2BytesToMessage(message, batteryVoltage);
 	message.push_back(boxHumidity);
-	message.push_back(getHigh(boxPressure));
-	message.push_back(getLow(boxPressure));
+	push2BytesToMessage(message, boxPressure);
 	pushTemperatureToMessage(message, boxTemperature);
-
 	for(int i=0 ; i< N_TEMP; i++)
 		pushTemperatureToMessage(message, temp[i]);
 
-	/*
-    uint8_t message[1+1+2+2+2*(N_TEMP)] = {serialNo,
-    		sessionStatus,
-			getHigh(batteryVoltage),
-			getLow(batteryVoltage),
-    		(uint8_t)(getHigh(tempLora0)),
-			(uint8_t)(getLow(tempLora0)),
-    		(uint8_t)(getHigh(tempLora1)),
-			(uint8_t)(getLow(tempLora1)),
-    };   // I know sending a signed int with a unsigned int is not good.
-*/
 
 	// Prepare upstream data transmission at the next possible time.
-	lmic_tx_error_t ret = LMIC_sendWithCallback(1, message.data(), message.size(), 0, callBack, (void*)0);
+	lmic_tx_error_t ret = LMIC_sendWithCallback(serialNo, message.data(), message.size(), 0, callBack, (void*)0);
 	if( ret != LMIC_ERROR_SUCCESS ){
 		Serial.println("Cannot register sending the LoRaWAN package. Error = "+String(ret));
 	} else {
