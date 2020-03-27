@@ -116,10 +116,8 @@ void setStatusBME280Error(){
 }
 
 void setStatusDS18B20Error(uint8_t index){
-	sessionStatus |= (0x01 << (index+1));
+	sessionStatus |= (0x01 << (index+2));
 }
-
-
 
 RTC_DATA_ATTR uint32_t bootCount = 0;
 

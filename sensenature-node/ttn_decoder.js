@@ -7,28 +7,23 @@ function Decoder(bytes, port) {
 	var boxid = "unknown";
 	if (serialNo > 0 && serialNo < boxids.length)
 		boxid = boxids[serialNo];
-	var sessionStatus = bytes[0];
 
+	var sessionStatus = bytes[0];	
 	var batteryVoltage = ((bytes[1] << 8) | bytes[2]);
-	var boxHumidity = bytes[3];
-
-	var boxPressure = ((bytes[4] << 8) | bytes[5]);
-	var boxTemperature = ((bytes[6] << 8) | bytes[7]) / 100.0;
-
 	
-	var T1 = ((bytes[8] << 8) | bytes[9]) / 100.0;
-	var T2 = ((bytes[10] << 8) | bytes[11]) / 100.0;
-	var T3 = ((bytes[12] << 8) | bytes[13]) / 100.0;
+	var retObject = { boxid: boxid, sessionStatus: sessionStatus , batteryVoltage: batteryVoltage};
+	if( ! (sessionStatus & (0x01<<1)) ){
+		//there was not BME280 error, read the data
+		retObject.boxHumidity = bytes[3];
+		retObject.boxPressure = ((bytes[4] << 8) | bytes[5]);
+		retObject.boxTemperature = ((bytes[6] << 8) | bytes[7]) / 100.0;
+	}
+	
+	for(var i=1; i<=3; i++ ){
+	  var idx = 8 + 2 * (i-1);
+		if( ! (sessionStatus & (0x01<<(i+1))) )
+			retObject["T"+i] = ((bytes[idx] << 8) | bytes[idx+1]) / 100.0;
+	}
 
-	return {
-		"boxid": boxid,
-		"sessionStatus": sessionStatus,
-		"batteryVoltage": batteryVoltage,
-		"boxHumidity": boxHumidity,
-		"boxPressure": boxPressure,
-		"boxTemperature": boxTemperature,
-		"T1": T1,
-		"T2": T2,
-		"T3": T3
-	};
+	return retObject;
 }
