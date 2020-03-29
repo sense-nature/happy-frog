@@ -5,8 +5,8 @@
  *      Author: zdroyer
  */
 
-#ifndef TTN_KEYS_H_
-#define TTN_KEYS_H_
+#ifndef DEVICE_DATA_H_
+#define DEVICE_DATA_H_
 
 #include <lmic.h>
 #include <DallasTemperature.h>
@@ -24,4 +24,4 @@ extern DeviceAddress DS18B20_SENSORS[3];
 
 
 
-#endif /* TTN_KEYS_H_ */
+#endif /* DEVICE_DATA_H_ */

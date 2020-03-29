@@ -10,12 +10,15 @@
 #include <pins_arduino.h>
 #include <SPI.h>
 
-#include "ttn_keys.h"
+#include "device_data.h"
+
 #include <lmic.h>
 #include <hal/hal.h>
 
-#include <oled/SSD1306Wire.h>
 //#include <heltec.h>
+//the Heltec version of SSD1306: 64x32 + OLED_RST
+#include <oled/SSD1306Wire.h>
+
 
 #include <esp_sleep.h>
 #include "soc/efuse_reg.h"
@@ -381,10 +384,14 @@ void setup() {
 	Serial.begin(115200ul);
 	Serial.flush();
 	delay(50ul);
-
+	Serial.println();
 	Serial.println("Device: ["+String(DEVICE_NAME)+"],  ID="+String(DEVICE_ID));
-	Serial.println("Wake up #"+ bootCount);
+	Serial.println("Wake up #"+ String(bootCount));
 	Serial.println("WU Reason: " + String(get_wakeup_reason()));
+
+	Serial.print("Time between measurements: ");
+	Serial.print(String((unsigned)TIME_BETWEEN_MEASUREMENTS/60) + "m ");
+	Serial.println(String((unsigned)TIME_BETWEEN_MEASUREMENTS%60) + "s ");
 
 	display.init();
 	display.setFont(ArialMT_Plain_10);
