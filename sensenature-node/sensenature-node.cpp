@@ -94,11 +94,6 @@ const lmic_pinmap lmic_pins = {
 };
 
 unsigned long startTime, endTime;
-
-#define mS_TO_S_FACTOR 1000ULL   /*Conversion factor for mili to seconds*/
-#define uS_TO_S_FACTOR 1000000ULL  /* Conversion factor for micro seconds to seconds */
-#define TIME_TO_SLEEP  (1*60)        /* Time ESP32 will go to sleep (in seconds) */
-
 uint8_t sessionStatus = 0;
 
 
@@ -135,40 +130,42 @@ const char *  get_wakeup_reason(){
     case ESP_SLEEP_WAKEUP_TOUCHPAD : return "DSWU: touch"; break;
     case ESP_SLEEP_WAKEUP_ULP : return "DSWU: ULP"; break;
   }
-
   setStatusWUNotFromDeepSleep();
   return sDefaultReason;
 }
 
+bool firstRun()
+{
+	return sessionStatus & 0x01;
+}
 
 
+
+#define mS_TO_S_FACTOR 1000ULL   /*Conversion factor for mili to seconds*/
+#define uS_TO_S_FACTOR 1000000ULL  /* Conversion factor for micro seconds to seconds */
 void goToDeepSleep(void *pUserData, int fSuccess){
 
    // Heltec.display->clear();
   Serial.write("Sending result: ");
    if( fSuccess){
-	   display.drawString (30, 0, "Sent: OK");
+	   //display.drawString (20, 0, " SENT");
 	   Serial.println("OK");
    } else {
-	   display.drawString (30, 0, "Send: FAILED");
+	   //display.drawString (20, 0, " FAILED");
 	   Serial.println("FAILED");
    }
    // Schedule next transmission
    //os_setTimedCallback(&sendjob, os_getTime()+sec2osticks(TX_INTERVAL), do_send);
    LedOFF();
 
-
-   display.drawString (0, 10, "Package# "+ String (bootCount));
-   display.display ();
-
    LMIC_shutdown();
+   if( firstRun() )
+	   delay(5000u);
    unsigned long delta = millis() - startTime;
    Serial.println("Work time: "+String(delta)+"ms");
    Serial.println("Going to sleep now");
    Serial.flush();
-
-   esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR - delta * mS_TO_S_FACTOR);
-
+   esp_sleep_enable_timer_wakeup(TIME_BETWEEN_MEASUREMENTS * uS_TO_S_FACTOR - delta * mS_TO_S_FACTOR);
    VextOFF();
    esp_deep_sleep_start();
 }
@@ -203,8 +200,11 @@ void pushTemperatureToMessage(std::vector<uint8_t> & vect, float fTemperature){
 }
 
 void do_send(osjob_t* j, void(*callBack)(void *, int)){
-    // Payload to send (uplink)
-	uint8_t serialNo = DEVICE_SERIAL_NO;
+
+	display.drawString (0, 15, "0x"+ String(sessionStatus,16));
+	display.display();
+	// Payload to send (uplink)
+	uint8_t serialNo = DEVICE_ID;
 	std::vector<uint8_t> message;
 	message.push_back(sessionStatus);
 	push2BytesToMessage(message, batteryVoltage);
@@ -214,17 +214,13 @@ void do_send(osjob_t* j, void(*callBack)(void *, int)){
 	for(int i=0 ; i< N_TEMP; i++)
 		pushTemperatureToMessage(message, temp[i]);
 
-
 	// Prepare upstream data transmission at the next possible time.
 	lmic_tx_error_t ret = LMIC_sendWithCallback(serialNo, message.data(), message.size(), 0, callBack, (void*)0);
 	if( ret != LMIC_ERROR_SUCCESS ){
 		Serial.println("Cannot register sending the LoRaWAN package. Error = "+String(ret));
 	} else {
 		LedON();
-		Serial.println("Sending uplink packet.");
-		display.clear();
-		display.drawString (0, 0, "SND...");
-		display.display ();
+		Serial.println("Sending uplink packet #"+ String (bootCount));
 	}
 }
 
@@ -276,6 +272,8 @@ void readDS18B20Sensors(){
 				 printAddress(addr);
 				 temp[i] = ds18b20.getTempC(addr);
 				 Serial.println(": " + String(temp[i]) + " *C");
+				 display.drawString(22, i*10, String(i+1) + ": "+ String(temp[i]));
+				 display.display();
 			 } else{
 				 setStatusDS18B20Error(i);
 				 Serial.print("ds18b20 @ ");
@@ -283,6 +281,7 @@ void readDS18B20Sensors(){
 				 Serial.println(" found address is not connected");
 			 }
 	    }
+
 	 } else {
 		 for(uint8_t i =0; i< N_TEMP; i++)
 			 setStatusDS18B20Error(i);
@@ -382,18 +381,15 @@ void setup() {
 	Serial.begin(115200ul);
 	Serial.flush();
 	delay(50ul);
-	Serial.print("Wake up #");
-    Serial.print(bootCount);
-    Serial.print(", reason: ");
-    Serial.println(get_wakeup_reason());
 
+	Serial.println("Device: ["+String(DEVICE_NAME)+"],  ID="+String(DEVICE_ID));
+	Serial.println("Wake up #"+ bootCount);
+	Serial.println("WU Reason: " + String(get_wakeup_reason()));
 
 	display.init();
-	display.flipScreenVertically();
 	display.setFont(ArialMT_Plain_10);
-	display.drawString(0, 0, "OLED init!");
+	display.drawString(0, 0, "#"+String(DEVICE_ID));
 	display.display();
-    display.clear();
 
 	//ds18b20 must be read before other init, in particular before i2c devices
     readDS18B20Sensors();
@@ -401,7 +397,6 @@ void setup() {
     readBME280Sensor();
     readBatteryVoltage();
     do_send(&sendjob, goToDeepSleep);
-
 }
 
 

@@ -11,7 +11,10 @@
 #include <lmic.h>
 #include <DallasTemperature.h>
 
-extern uint8_t DEVICE_SERIAL_NO;
+extern uint8_t DEVICE_ID;
+extern const char DEVICE_NAME[];
+
+extern uint64_t TIME_BETWEEN_MEASUREMENTS; //[s]
 
 extern u1_t NWKSKEY[16];
 extern u1_t APPSKEY[16];
