@@ -263,12 +263,24 @@ void readDS18B20Sensors(){
 	ds18b20.setResolution(12);
 	ds18b20.setCheckForConversion(false);
 	ds18b20.requestTemperatures();
+	delay(200u);
 	 uint8_t n = ds18b20.getDS18Count();
 
 	 if( n > 0 ){
-		Serial.println("Detected "+String(n)+" DS18B20 sensor(s) on the bus");
+		 DeviceAddress addr = {0};
+		 Serial.println("Detected "+String(n)+" DS18B20 sensor(s) on the bus");
+		if( firstRun() ){
+		    Serial.println("Detected DS18B20 sensors:");
+		    Serial.print("{");
+		    for(uint8_t i=0; i < n ; i++){
+				ds18b20.getAddress(addr, i);
+				if(i >0)
+					Serial.println(",");
+				printAddress(addr);
+		    }
+		    Serial.println("};");
+		}
 	    for(uint8_t i=0; i < N_TEMP ; i++){
-			 DeviceAddress addr = {0};
 			 memcpy(addr, DS18B20_SENSORS[i], sizeof(addr));;
 			 if(ds18b20.isConnected(addr) ){
 				 Serial.print("Temperature @ ");
