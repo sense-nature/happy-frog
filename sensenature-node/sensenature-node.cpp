@@ -32,10 +32,36 @@
 #include <Adafruit_BME280.h>
 
 
-
 SSD1306Wire display(0x3c, SDA_OLED, SCL_OLED, RST_OLED, GEOMETRY_64_32);
 Adafruit_BME280 bme;
 
+#include <WiFi.h>
+const char* ntpServer = "pool.ntp.org";
+
+#include <time.h>
+
+#include <SPIFFS.h>
+bool spiffs_initialized = false;
+
+#include <Update.h>
+
+//https://github.com/yurilopes/SPIFFSIniFile
+#include <SPIFFSIniFile.h>
+const size_t ini_buffer_len = 80;
+char ini_buffer[ini_buffer_len];
+
+const char * wifi_settings = "/wifi.txt";
+
+//https://github.com/JChristensen/DS3232RTC
+#include <DS3232RTC.h> 
+DS3232RTC ds3231(false);
+volatile bool alarm_triggered = false;
+uint8_t current_alarm = 0;
+
+
+#include <WebServer.h>
+WebServer server(80);
+File fsUploadFile;
 
 
 #define MY_ONEWIRE_PIN  12
@@ -57,10 +83,12 @@ void os_getDevKey (u1_t* buf) { }
 
 static osjob_t sendjob;
 
+
 void LedON(){
 	pinMode(LED_BUILTIN,OUTPUT);
 	digitalWrite(LED_BUILTIN, HIGH);
 }
+
 
 void LedOFF(){
 	pinMode(LED_BUILTIN,OUTPUT);
@@ -74,11 +102,13 @@ void VextON(void)
 	digitalWrite(Vext, LOW);
 }
 
+
 void VextOFF(void) //Vext default OFF
 {
 	pinMode(Vext,OUTPUT);
 	digitalWrite(Vext, HIGH);
 }
+
 
 void ResetDisplay()
 {
@@ -88,6 +118,7 @@ void ResetDisplay()
 	digitalWrite(RST_OLED, HIGH);
 }
 
+
 // Pin mapping for Heltec Wireless Stick (taken from bastelgarage.ch, confirmed working)
 const lmic_pinmap lmic_pins = {
     .nss = 18,
@@ -96,26 +127,30 @@ const lmic_pinmap lmic_pins = {
     .dio = {26, 34 , 35 }
 };
 
+
 unsigned long startTime, endTime;
 uint8_t sessionStatus = 0;
-
 
 
 void resetStatus(){
 	sessionStatus = 0x00;
 }
 
+
 void setStatusWUNotFromDeepSleep( ){
 		sessionStatus |= 0x01;
 }
+
 
 void setStatusBME280Error(){
 	sessionStatus |= (0x01 << 1);
 }
 
+
 void setStatusDS18B20Error(uint8_t index){
 	sessionStatus |= (0x01 << (index+2));
 }
+
 
 RTC_DATA_ATTR uint32_t bootCount = 0;
 
@@ -136,6 +171,7 @@ const char *  get_wakeup_reason(){
   setStatusWUNotFromDeepSleep();
   return sDefaultReason;
 }
+
 
 bool firstRun()
 {
@@ -179,6 +215,7 @@ uint8_t getHigh(int16_t val){
 	return (val & 0xFF00) >> 8;
 }
 
+
 uint8_t getHigh(uint16_t val){
 	return (val & 0xFF00) >> 8;
 }
@@ -187,6 +224,8 @@ uint8_t getHigh(uint16_t val){
 int8_t getLow(int16_t val){
 	return val & 0xFF;
 }
+
+
 uint8_t getLow(uint16_t val){
 	return val & 0xFF;
 }
@@ -197,10 +236,12 @@ void push2BytesToMessage(std::vector<uint8_t> & vect, int16_t iValue){
 	vect.push_back(getLow(iValue));
 }
 
+
 void pushTemperatureToMessage(std::vector<uint8_t> & vect, float fTemperature){
 	int16_t iTemp = (int16_t)roundf(fTemperature*100.0f);
 	push2BytesToMessage(vect, iTemp);
 }
+
 
 void do_send(osjob_t* j, void(*callBack)(void *, int)){
 
@@ -253,9 +294,6 @@ void printAddress(DeviceAddress deviceAddress)
 }
 
 
-
-
-
 void readDS18B20Sensors(){
 	OneWire w1(MY_ONEWIRE_PIN);
 	DallasTemperature ds18b20(&w1);
@@ -303,6 +341,8 @@ void readDS18B20Sensors(){
 		 Serial.println("No ds18b20 detected on the bus");
 	 }
 }
+
+
 void readBatteryVoltage()
 {
 	//analogSetSamples(8);
@@ -311,6 +351,7 @@ void readBatteryVoltage()
 	batteryVoltage = analogRead(13); // Reference voltage is 3v3 so maximum reading is 3v3 = 4095 in range 0 to 4095
 	Serial.println("Battery voltage reading: "+ String(batteryVoltage));
 }
+
 
 void readBME280Sensor(){
 	bool status = bme.begin(0x76, &Wire);
@@ -336,6 +377,7 @@ void readBME280Sensor(){
 	}
 
 }
+
 
 void initLoRaWAN(u4_t seqNo) {
 	// LMIC init
@@ -384,6 +426,403 @@ void initLoRaWAN(u4_t seqNo) {
 }
 
 
+void start_wifi() {  
+  if( spiffs_initialized ) {
+    SPIFFSIniFile wifi_ini(wifi_settings);
+    if( SPIFFS.exists(wifi_settings) && wifi_ini.open() ){
+      Serial.println("Connecting to wifi");
+      wifi_ini.getValue("wifi", "ssid", ini_buffer, ini_buffer_len);
+      String ssid(ini_buffer);
+      Serial.println(ssid);
+      wifi_ini.getValue("wifi", "password", ini_buffer, ini_buffer_len);
+      String password(ini_buffer);
+      Serial.println(password);
+      WiFi.begin(ssid.c_str(), password.c_str());
+      Serial.print("connecting to wifi ");
+      for(int i = 0; i < 10000; i+=500){
+        Serial.print(".");
+        if(WiFi.status() == WL_CONNECTED){
+          Serial.println("!");
+          break;
+        }
+        delay(500);
+      }
+    }
+  }
+  if(WiFi.status() != WL_CONNECTED){
+    Serial.println("Starting AP");
+    WiFi.disconnect();
+    WiFi.softAP("sensenature_node_AP", "sensenature");
+  }
+}
+
+
+String getContentType(String filename) {
+  if (server.hasArg("download")) {
+    return "application/octet-stream";
+  } else if (filename.endsWith(".htm")) {
+    return "text/html";
+  } else if (filename.endsWith(".html")) {
+    return "text/html";
+  } else if (filename.endsWith(".css")) {
+    return "text/css";
+  } else if (filename.endsWith(".js")) {
+    return "application/javascript";
+  } else if (filename.endsWith(".png")) {
+    return "image/png";
+  } else if (filename.endsWith(".gif")) {
+    return "image/gif";
+  } else if (filename.endsWith(".jpg")) {
+    return "image/jpeg";
+  } else if (filename.endsWith(".ico")) {
+    return "image/x-icon";
+  } else if (filename.endsWith(".xml")) {
+    return "text/xml";
+  } else if (filename.endsWith(".pdf")) {
+    return "application/x-pdf";
+  } else if (filename.endsWith(".zip")) {
+    return "application/x-zip";
+  } else if (filename.endsWith(".gz")) {
+    return "application/x-gzip";
+  }
+  return "text/plain";
+}
+
+
+bool exists(String path){
+  bool there = false;
+  File file = SPIFFS.open(path, "r");
+  if(!file.isDirectory()){
+    there = true;
+  }
+  file.close();
+  return there;
+}
+
+
+bool handleFileRead(String path) {
+  Serial.println("handleFileRead: " + path);
+  if (path.endsWith("/")) {
+    path += "index.htm";
+  }
+  String contentType = getContentType(path);
+  if (exists(path)) {
+    File file = SPIFFS.open(path, "r");
+    server.streamFile(file, contentType);
+    file.close();
+    return true;
+  }
+  return false;
+}
+
+
+void handleFileUpload() {
+  if (server.uri() != "/edit") {
+    return;
+  }
+  HTTPUpload& upload = server.upload();
+  if (upload.status == UPLOAD_FILE_START) {
+    String filename = upload.filename;
+    if (!filename.startsWith("/")) {
+      filename = "/" + filename;
+    }
+    Serial.print("handleFileUpload Name: "); 
+    Serial.println(filename);
+    fsUploadFile = SPIFFS.open(filename, "w");
+    filename = String();
+  } else if (upload.status == UPLOAD_FILE_WRITE) {
+    //DBG_OUTPUT_PORT.print("handleFileUpload Data: "); DBG_OUTPUT_PORT.println(upload.currentSize);
+    if (fsUploadFile) {
+      fsUploadFile.write(upload.buf, upload.currentSize);
+    }
+  } else if (upload.status == UPLOAD_FILE_END) {
+    if (fsUploadFile) {
+      fsUploadFile.close();
+    }
+    Serial.print("handleFileUpload Size: "); 
+    Serial.println(upload.totalSize);
+  }
+}
+
+
+void handleFileDelete() {
+  if (server.args() == 0) {
+    return server.send(500, "text/plain", "BAD ARGS");
+  }
+  String path = server.arg(0);
+  Serial.println("handleFileDelete: " + path);
+  if (path == "/") {
+    return server.send(500, "text/plain", "BAD PATH");
+  }
+  if (!exists(path)) {
+    return server.send(404, "text/plain", "FileNotFound");
+  }
+  SPIFFS.remove(path);
+  server.send(200, "text/plain", "");
+}
+
+
+void handleFileCreate() {
+  if (server.args() == 0) {
+    return server.send(500, "text/plain", "BAD ARGS");
+  }
+  String path = server.arg(0);
+  Serial.println("handleFileCreate: " + path);
+  if (path == "/") {
+    return server.send(500, "text/plain", "BAD PATH");
+  }
+  if (exists(path)) {
+    return server.send(500, "text/plain", "FILE EXISTS");
+  }
+  File file = SPIFFS.open(path, "w");
+  if (file) {
+    file.close();
+  } else {
+    return server.send(500, "text/plain", "CREATE FAILED");
+  }
+  server.send(200, "text/plain", "");
+  path = String();
+}
+
+
+void handleFileList() {
+  if (!server.hasArg("dir")) {
+    server.send(500, "text/plain", "BAD ARGS");
+    return;
+  }
+
+  String path = server.arg("dir");
+  Serial.println("handleFileList: " + path);
+
+
+  File root = SPIFFS.open(path);
+  path = String();
+
+  String output = "[";
+  if(root.isDirectory()){
+      File file = root.openNextFile();
+      while(file){
+          if (output != "[") {
+            output += ',';
+          }
+          output += "{\"type\":\"";
+          output += (file.isDirectory()) ? "dir" : "file";
+          output += "\",\"name\":\"";
+          output += String(file.name()).substring(1);
+          output += "\"}";
+          file = root.openNextFile();
+      }
+  }
+  output += "]";
+  server.send(200, "text/json", output);
+}
+
+
+void handleNtpUpdate() {
+  // update rtc from ntp request
+  Serial.println("updating from from NTP");
+  if (server.hasArg("server")) {
+    configTime(0L, 0, server.arg("server").c_str());
+  } else {
+    configTime(0L, 0, ntpServer);
+  }
+  struct tm timeinfo;
+  if(!getLocalTime(&timeinfo)){
+    Serial.println("Failed to obtain time");
+    server.send(500, "text/plain", "Failed to obtain time");
+    return;
+  }
+  
+  time_t t_now = mktime(&timeinfo);
+  setTime(t_now);
+  ds3231.set(t_now);
+  
+  char time_buf[64];
+  size_t written = strftime(time_buf, 64, "%A, %B %d %Y %H:%M:%S", &timeinfo);
+  Serial.println(time_buf);
+  server.send(200, "text/plain", time_buf);
+}
+
+
+void handleGetTime() {
+  char time_buf[64];
+  time_t t_now = now();
+  size_t written = strftime(time_buf, 64, "%A, %B %d %Y %H:%M:%S", localtime(&t_now));
+  Serial.println(time_buf);
+  server.send(200, "text/plain", time_buf);
+}
+
+
+void handleSpiffsFree() {
+  if(spiffs_initialized){
+    String output = "used/total bytes: ";
+    output += String(SPIFFS.usedBytes());
+    output += "/";
+    output += String(SPIFFS.totalBytes());
+    server.send(200, "text/plain", output);
+  } else {
+    server.send(500, "spiffs not initialized");
+  }
+}
+
+
+void handleFileSize() {
+  if (!server.hasArg("file")) {
+    Serial.println("missing file argument");
+    server.send(500, "text/plain", "missing file argument");
+    return;
+  }
+  
+  String file_name = server.arg("file");
+  if (!exists(file_name)) {
+    Serial.println("file does not exist");
+    server.send(500, "text/plain", "file does not exists");
+    return;
+  }
+  
+  File file = SPIFFS.open(file_name);
+  if (!file) {
+    Serial.println("file open failed");
+    server.send(500, "text/plain", "file open failed");
+    return;
+  }  
+  size_t file_size = file.size();
+  String fsize = file_name + ": " + String(file_size) + " B";
+  Serial.println(fsize);
+  server.send(200, "text/plain", fsize);
+}
+
+
+void handleSpiffsFormat() {
+  Serial.println("spiffs format requested");
+  if (!server.hasArg("sure")) {
+    Serial.println("formatting failed; send \"?sure=yes\" along");
+    server.send(500, "text/plain", "BAD ARGS, send ?sure=yes along if you're sure");
+    return;
+  } 
+  String sure = server.arg("sure");
+  if (sure != "yes") {
+    Serial.println("formatting failed; send \"?sure=yes\" along");
+    server.send(500, "text/plain", "BAD ARGS, send ?sure=yes along if you're sure");
+    return;
+  }
+  Serial.println("format request confirmed, formatting");
+  bool formatted = SPIFFS.format();
+  if(formatted) {
+    Serial.println("formatting succesful"); 
+    server.send(200, "text/plain", "format succesfull");
+  } else {
+    Serial.println("formatting failed");
+    server.send(500, "text/plain", "format failed");
+  }
+}
+
+
+void updateFirmware() {
+  Serial.println("update fw");
+  if (!server.hasArg("file")) {
+    Serial.println("missing file argument");
+    server.send(500, "text/plain", "missing file argument");
+    return;
+  }
+  
+  String fw_file = server.arg("file");
+  if (!exists(fw_file)) {
+    Serial.println("file does not exist");
+    server.send(500, "text/plain", "fw-update: file does not exists");
+    return;
+  }
+  
+  File file = SPIFFS.open(fw_file);
+  if (!file) {
+    Serial.println("file open failed");
+    server.send(500, "text/plain", "fw-update: file open failed");
+    return;
+  }  
+
+  Serial.println("starting update");
+  size_t file_size = file.size();
+  if(!Update.begin(file_size)){
+    Serial.println("cannot start update");
+    server.send(500, "text/plain", "fw-update: cannot start update");
+    return;
+  }
+
+  Serial.println("write stream");
+  Update.writeStream(file);
+
+  if(Update.end()) {
+    Serial.println("update successful, rebooting");
+    server.send(200, "text/plain", "fw-update: update successful, rebooting");
+  } else {
+    Serial.println("update failed, error Occurred: " + String(Update.getError()) );
+    server.send(500, "text/plain", "fw-update failed: " + String(Update.getError()) );
+  }
+
+  file.close();
+  SPIFFS.remove(fw_file);
+  delay(1000);
+  ESP.restart();
+}
+
+
+void start_webserver() {
+  Serial.print("Open http://");
+  Serial.print(WiFi.localIP());
+  Serial.println("/edit to see the file browser");
+  
+  //SERVER INIT
+  //list directory
+  server.on("/list", HTTP_GET, handleFileList);
+  //load editor
+  server.on("/edit", HTTP_GET, []() {
+    if (!handleFileRead("/edit.htm")) {
+      server.send(404, "text/plain", "FileNotFound");
+    }
+  });
+
+  //create file
+  server.on("/edit", HTTP_PUT, handleFileCreate);
+  //delete file
+  server.on("/edit", HTTP_DELETE, handleFileDelete);
+  //first callback is called after the request has ended with all parsed arguments
+  //second callback handles file uploads at that location
+  server.on("/edit", HTTP_POST, []() {
+    server.send(200, "text/plain", "");
+  }, handleFileUpload);
+
+  server.on("/ntp_update", HTTP_GET, handleNtpUpdate);
+  server.on("/get_time", HTTP_GET, handleGetTime);
+
+  server.on("/format", HTTP_GET, handleSpiffsFormat);
+  server.on("/delete", HTTP_GET, handleFileDelete);
+
+  server.on("/file_size", HTTP_GET, handleFileSize);
+  server.on("/free_space", HTTP_GET, handleSpiffsFree);
+  server.on("/update", HTTP_GET, updateFirmware);
+
+  //called when the url is not defined here
+  //use it to load content from FILESYSTEM
+  server.onNotFound([]() {
+    if (!handleFileRead(server.uri())) {
+      server.send(404, "text/plain", "FileNotFound");
+    }
+  });
+  
+  //get heap status, analog input value and all GPIO statuses in one json call
+  server.on("/all", HTTP_GET, []() {
+    String json = "{";
+    json += "\"heap\":" + String(ESP.getFreeHeap());
+    json += ", \"analog\":" + String(analogRead(A0));
+    json += ", \"gpio\":" + String((uint32_t)(0));
+    json += "}";
+    server.send(200, "text/json", json);
+    json = String();
+  });
+  server.begin();
+  Serial.println("HTTP server started");
+  
+}
 
 
 
@@ -396,6 +835,28 @@ void setup() {
 	Serial.begin(115200ul);
 	Serial.flush();
 	delay(50ul);
+
+  spiffs_initialized = SPIFFS.begin();
+
+  Wire.begin(4, 15);
+
+  time_t epoch = ds3231.get();
+  setTime(epoch);
+  
+  if(spiffs_initialized) {
+    Serial.println("spiffs initialized");
+  } else {
+    Serial.println("nope");
+  }
+  if(esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_EXT0) {
+    // wake up not from rtc -> assume reset 
+    start_wifi();
+    start_webserver();
+  } else {
+    // rtc wakeup
+  }
+  Serial.println(esp_sleep_get_wakeup_cause());
+  
 	Serial.println();
 	Serial.println("Device: ["+String(DEVICE_NAME)+"],  ID="+String(DEVICE_ID));
 	Serial.println("Wake up #"+ String(bootCount));
@@ -405,21 +866,24 @@ void setup() {
 	Serial.print(String((unsigned)TIME_BETWEEN_MEASUREMENTS/60) + "m ");
 	Serial.println(String((unsigned)TIME_BETWEEN_MEASUREMENTS%60) + "s ");
 
+
 	display.init();
 	display.setFont(ArialMT_Plain_10);
 	display.drawString(0, 0, "#"+String(DEVICE_ID));
 	display.display();
 
 	//ds18b20 must be read before other init, in particular before i2c devices
-    readDS18B20Sensors();
-	initLoRaWAN(bootCount);
-    readBME280Sensor();
-    readBatteryVoltage();
-    do_send(&sendjob, goToDeepSleep);
+//    readDS18B20Sensors();
+//	initLoRaWAN(bootCount);
+//    readBME280Sensor();
+//    readBatteryVoltage();
+//    do_send(&sendjob, goToDeepSleep);
 }
 
 
 void loop() {
-	//will not be called after the deepsleep wake up
-     os_runloop_once();
+  //will not be called after the deepsleep wake up
+  //os_runloop_once();
+  //delay(100);
+  server.handleClient();
 }
