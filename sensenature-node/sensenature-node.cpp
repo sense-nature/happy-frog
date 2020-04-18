@@ -9,6 +9,9 @@
 #include <Arduino.h>
 #include <pins_arduino.h>
 #include <SPI.h>
+#include <driver/adc.h>
+#include <esp_wifi.h>
+#include <esp_bt.h>
 
 #include "device_data.h"
 
@@ -33,8 +36,7 @@
 
 
 
-SSD1306Wire display(0x3c, SDA_OLED, SCL_OLED, RST_OLED, GEOMETRY_64_32);
-Adafruit_BME280 bme;
+
 
 
 
@@ -57,14 +59,30 @@ void os_getDevKey (u1_t* buf) { }
 
 static osjob_t sendjob;
 
+
+SSD1306Wire * getDisplay(){
+	static SSD1306Wire * pDisplay = 0;
+	if( pDisplay == 0 )
+		pDisplay = new SSD1306Wire(0x3c, SDA_OLED, SCL_OLED, RST_OLED, GEOMETRY_64_32);
+	return pDisplay;
+}
+
+Adafruit_BME280 * getBme(){
+	static Adafruit_BME280 * pBme =0;
+	if(pBme == 0 )
+		pBme = new Adafruit_BME280();
+	return pBme;
+}
+
+
 void LedON(){
-	pinMode(LED_BUILTIN,OUTPUT);
-	digitalWrite(LED_BUILTIN, HIGH);
+//	pinMode(LED_BUILTIN,OUTPUT);
+//	digitalWrite(LED_BUILTIN, HIGH);
 }
 
 void LedOFF(){
-	pinMode(LED_BUILTIN,OUTPUT);
-	digitalWrite(LED_BUILTIN, LOW);
+//	pinMode(LED_BUILTIN,OUTPUT);
+//	digitalWrite(LED_BUILTIN, LOW);
 }
 
 
@@ -80,6 +98,8 @@ void VextOFF(void) //Vext default OFF
 	digitalWrite(Vext, HIGH);
 }
 
+/*
+
 void ResetDisplay()
 {
 	pinMode(RST_OLED,OUTPUT);
@@ -87,6 +107,8 @@ void ResetDisplay()
 	delay(50ul);
 	digitalWrite(RST_OLED, HIGH);
 }
+*/
+
 
 // Pin mapping for Heltec Wireless Stick (taken from bastelgarage.ch, confirmed working)
 const lmic_pinmap lmic_pins = {
@@ -151,10 +173,10 @@ void goToDeepSleep(void *pUserData, int fSuccess){
    // Heltec.display->clear();
   Serial.write("Sending result: ");
    if( fSuccess){
-	   //display.drawString (20, 0, " SENT");
+	   //getDisplay()->drawString (20, 0, " SENT");
 	   Serial.println("OK");
    } else {
-	   //display.drawString (20, 0, " FAILED");
+	   //getDisplay()->drawString (20, 0, " FAILED");
 	   Serial.println("FAILED");
    }
    // Schedule next transmission
@@ -162,13 +184,24 @@ void goToDeepSleep(void *pUserData, int fSuccess){
    LedOFF();
 
    LMIC_shutdown();
+
    if( firstRun() )
 	   delay(5000u);
    unsigned long delta = millis() - startTime;
    Serial.println("Work time: "+String(delta)+"ms");
    Serial.println("Going to sleep now");
    Serial.flush();
-   esp_sleep_enable_timer_wakeup(TIME_BETWEEN_MEASUREMENTS * uS_TO_S_FACTOR - delta * mS_TO_S_FACTOR);
+
+   digitalWrite(RST_OLED, LOW);
+   pinMode(MY_ONEWIRE_PIN,OUTPUT);
+   digitalWrite(MY_ONEWIRE_PIN, LOW);
+
+
+
+   if( bootCount < 10 ) //first 10 times run go to sleep only for 60s - useful for installation process
+	   esp_sleep_enable_timer_wakeup(60 * uS_TO_S_FACTOR - delta * mS_TO_S_FACTOR);
+   else
+	   esp_sleep_enable_timer_wakeup(TIME_BETWEEN_MEASUREMENTS * uS_TO_S_FACTOR - delta * mS_TO_S_FACTOR);
    VextOFF();
    esp_deep_sleep_start();
 }
@@ -204,8 +237,8 @@ void pushTemperatureToMessage(std::vector<uint8_t> & vect, float fTemperature){
 
 void do_send(osjob_t* j, void(*callBack)(void *, int)){
 
-	display.drawString (0, 15, "0x"+ String(sessionStatus,16));
-	display.display();
+	getDisplay()->drawString (0, 15, "0x"+ String(sessionStatus,16));
+	getDisplay()->display();
 	// Payload to send (uplink)
 	uint8_t serialNo = DEVICE_ID;
 	std::vector<uint8_t> message;
@@ -280,15 +313,15 @@ void readDS18B20Sensors(){
 		    }
 		    Serial.println("};");
 		}
-	    for(uint8_t i=0; i < N_TEMP ; i++){
+	    for(uint8_t i=0; i < N_TEMP && i < n ; i++){
 			 memcpy(addr, DS18B20_SENSORS[i], sizeof(addr));;
 			 if(ds18b20.isConnected(addr) ){
 				 Serial.print("Temperature @ ");
 				 printAddress(addr);
 				 temp[i] = ds18b20.getTempC(addr);
 				 Serial.println(": " + String(temp[i]) + " *C");
-				 display.drawString(22, i*10, String(i+1) + ": "+ String(temp[i]));
-				 display.display();
+				 getDisplay()->drawString(22, i*10, String(i+1) + ": "+ String(temp[i]));
+				 getDisplay()->display();
 			 } else{
 				 setStatusDS18B20Error(i);
 				 Serial.print("ds18b20 @ ");
@@ -310,26 +343,29 @@ void readBatteryVoltage()
 	delay(10u);
 	batteryVoltage = analogRead(13); // Reference voltage is 3v3 so maximum reading is 3v3 = 4095 in range 0 to 4095
 	Serial.println("Battery voltage reading: "+ String(batteryVoltage));
+	pinMode(13, OUTPUT);
+	digitalWrite(13, LOW);
+	adc_power_off();
 }
 
 void readBME280Sensor(){
-	bool status = bme.begin(0x76, &Wire);
+	bool status = getBme()->begin(0x76, &Wire);
 	if (!status) {
 		Serial.println("Could not find a valid BME280 sensor, check wiring, address, sensor ID!");
 		setStatusBME280Error();
 	} else {
-		boxTemperature = bme.readTemperature();
+		boxTemperature = getBme()->readTemperature();
 		Serial.print("Temperature = ");
 		Serial.print(boxTemperature);
 		Serial.println(" *C");
 
 		Serial.print("Pressure = ");
 
-		boxPressure = roundf(bme.readPressure() / 100.0F);
+		boxPressure = roundf(getBme()->readPressure() / 100.0F);
 		Serial.print(boxPressure);
 		Serial.println(" hPa");
 
-		boxHumidity = roundf(bme.readHumidity());
+		boxHumidity = roundf(getBme()->readHumidity());
 		Serial.print("Humidity = ");
 		Serial.print(boxHumidity);
 		Serial.println(" %");
@@ -389,10 +425,12 @@ void initLoRaWAN(u4_t seqNo) {
 
 void setup() {
 	startTime = millis();
+	//esp_wifi_start();
+	//esp_wifi_stop();
+	esp_bt_controller_disable();
 	resetStatus();
 	VextON();
 	bootCount++;
-
 	Serial.begin(115200ul);
 	Serial.flush();
 	delay(50ul);
@@ -405,10 +443,10 @@ void setup() {
 	Serial.print(String((unsigned)TIME_BETWEEN_MEASUREMENTS/60) + "m ");
 	Serial.println(String((unsigned)TIME_BETWEEN_MEASUREMENTS%60) + "s ");
 
-	display.init();
-	display.setFont(ArialMT_Plain_10);
-	display.drawString(0, 0, "#"+String(DEVICE_ID));
-	display.display();
+	getDisplay()->init();
+	getDisplay()->setFont(ArialMT_Plain_10);
+	getDisplay()->drawString(0, 0, "#"+String(DEVICE_ID));
+	getDisplay()->display();
 
 	//ds18b20 must be read before other init, in particular before i2c devices
     readDS18B20Sensors();

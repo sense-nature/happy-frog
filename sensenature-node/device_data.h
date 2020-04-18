@@ -20,7 +20,7 @@ extern u1_t NWKSKEY[16];
 extern u1_t APPSKEY[16];
 extern u4_t DEVADDR;
 
-extern DeviceAddress DS18B20_SENSORS[3];
+extern DeviceAddress DS18B20_SENSORS[4];
 
 
 
