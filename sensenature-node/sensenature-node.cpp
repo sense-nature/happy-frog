@@ -313,7 +313,7 @@ void readDS18B20Sensors(){
 		    }
 		    Serial.println("};");
 		}
-	    for(uint8_t i=0; i < N_TEMP && i < n ; i++){
+	    for(uint8_t i=0; i < N_TEMP ; i++){
 			 memcpy(addr, DS18B20_SENSORS[i], sizeof(addr));;
 			 if(ds18b20.isConnected(addr) ){
 				 Serial.print("Temperature @ ");
@@ -326,7 +326,7 @@ void readDS18B20Sensors(){
 				 setStatusDS18B20Error(i);
 				 Serial.print("ds18b20 @ ");
 				 printAddress(addr);
-				 Serial.println(" found address is not connected");
+				 Serial.println(" - sensor at this address is not connected");
 			 }
 	    }
 
