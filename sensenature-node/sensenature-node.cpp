@@ -67,6 +67,7 @@ SSD1306Wire * getDisplay(){
 	return pDisplay;
 }
 
+
 Adafruit_BME280 * getBme(){
 	static Adafruit_BME280 * pBme =0;
 	if(pBme == 0 )
@@ -168,21 +169,10 @@ bool firstRun()
 
 #define mS_TO_S_FACTOR 1000ULL   /*Conversion factor for mili to seconds*/
 #define uS_TO_S_FACTOR 1000000ULL  /* Conversion factor for micro seconds to seconds */
-void goToDeepSleep(void *pUserData, int fSuccess){
 
-   // Heltec.display->clear();
-  Serial.write("Sending result: ");
-   if( fSuccess){
-	   //getDisplay()->drawString (20, 0, " SENT");
-	   Serial.println("OK");
-   } else {
-	   //getDisplay()->drawString (20, 0, " FAILED");
-	   Serial.println("FAILED");
-   }
-   // Schedule next transmission
-   //os_setTimedCallback(&sendjob, os_getTime()+sec2osticks(TX_INTERVAL), do_send);
+
+void goToDeepSleep(){
    LedOFF();
-
    LMIC_shutdown();
 
    if( firstRun() )
@@ -206,6 +196,22 @@ void goToDeepSleep(void *pUserData, int fSuccess){
    esp_deep_sleep_start();
 }
 
+
+void afterLoraPacketSent(void *pUserData, int fSuccess){
+   // Heltec.display->clear();
+  Serial.write("Sending result: ");
+   if( fSuccess){
+	   //getDisplay()->drawString (20, 0, " SENT");
+	   Serial.println("OK");
+   } else {
+	   //getDisplay()->drawString (20, 0, " FAILED");
+	   Serial.println("FAILED");
+   }
+   // Schedule next transmission
+   //os_setTimedCallback(&sendjob, os_getTime()+sec2osticks(TX_INTERVAL), do_send);
+   goToDeepSleep();
+
+}
 
 uint8_t getHigh(int16_t val){
 
@@ -239,24 +245,31 @@ void do_send(osjob_t* j, void(*callBack)(void *, int)){
 
 	getDisplay()->drawString (0, 15, "0x"+ String(sessionStatus,16));
 	getDisplay()->display();
-	// Payload to send (uplink)
-	uint8_t serialNo = DEVICE_ID;
-	std::vector<uint8_t> message;
-	message.push_back(sessionStatus);
-	push2BytesToMessage(message, batteryVoltage);
-	message.push_back(boxHumidity);
-	push2BytesToMessage(message, boxPressure);
-	pushTemperatureToMessage(message, boxTemperature);
-	for(int i=0 ; i< N_TEMP; i++)
-		pushTemperatureToMessage(message, temp[i]);
-
-	// Prepare upstream data transmission at the next possible time.
-	lmic_tx_error_t ret = LMIC_sendWithCallback(serialNo, message.data(), message.size(), 0, callBack, (void*)0);
-	if( ret != LMIC_ERROR_SUCCESS ){
-		Serial.println("Cannot register sending the LoRaWAN package. Error = "+String(ret));
-	} else {
+	if( firstRun() ){
+		//don't send anything once in the first  after turning on
 		LedON();
-		Serial.println("Sending uplink packet #"+ String (bootCount));
+		Serial.println("Skipping sending packet #"+ String (bootCount));
+		goToDeepSleep();
+	} else {
+		// Payload to send (uplink)
+		uint8_t serialNo = DEVICE_ID;
+		std::vector<uint8_t> message;
+		message.push_back(sessionStatus);
+		push2BytesToMessage(message, batteryVoltage);
+		message.push_back(boxHumidity);
+		push2BytesToMessage(message, boxPressure);
+		pushTemperatureToMessage(message, boxTemperature);
+		for(int i=0 ; i< N_TEMP; i++)
+			pushTemperatureToMessage(message, temp[i]);
+
+		// Prepare upstream data transmission at the next possible time.
+		lmic_tx_error_t ret = LMIC_sendWithCallback(serialNo, message.data(), message.size(), 0, callBack, (void*)0);
+		if( ret != LMIC_ERROR_SUCCESS ){
+			Serial.println("Cannot register sending the LoRaWAN package. Error = "+String(ret));
+		} else {
+			LedON();
+			Serial.println("Sending uplink packet #"+ String (bootCount));
+		}
 	}
 }
 
@@ -316,7 +329,7 @@ void readDS18B20Sensors(){
 	    for(uint8_t i=0; i < N_TEMP ; i++){
 			 memcpy(addr, DS18B20_SENSORS[i], sizeof(addr));;
 			 if(ds18b20.isConnected(addr) ){
-				 Serial.print("Temperature @ ");
+				 Serial.print("T"+String(i+1)+ " @ ");
 				 printAddress(addr);
 				 temp[i] = ds18b20.getTempC(addr);
 				 Serial.println(": " + String(temp[i]) + " *C");
@@ -453,7 +466,7 @@ void setup() {
 	initLoRaWAN(bootCount);
     readBME280Sensor();
     readBatteryVoltage();
-    do_send(&sendjob, goToDeepSleep);
+    do_send(&sendjob, afterLoraPacketSent);
 }
 
 
