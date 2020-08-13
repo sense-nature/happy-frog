@@ -7,6 +7,7 @@
 #define LMIC_DEBUG_LEVEL 2
 
 #include <Arduino.h>
+#include <Wire.h>
 #include <pins_arduino.h>
 #include <SPI.h>
 #include <driver/adc.h>
@@ -18,9 +19,9 @@
 #include <lmic.h>
 #include <hal/hal.h>
 
-//#include <heltec.h>
-//the Heltec version of SSD1306: 64x32 + OLED_RST
-#include <oled/SSD1306Wire.h>
+
+//the generic version of SSD1306:
+#include <SSD1306Wire.h>
 
 
 #include <esp_sleep.h>
@@ -30,7 +31,7 @@
 #include <DallasTemperature.h>
 #include <OneWire.h>
 #include <SoftwareSerial.h>
-#include <Wire.h>
+
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
 
@@ -40,7 +41,10 @@
 
 
 
-#define MY_ONEWIRE_PIN  12
+#define MY_ONEWIRE_PIN  2
+#define MY_OLED_SDA 12
+#define MY_OLED_SCL 15
+
 
 // Data Variable for Temperature
 #define N_TEMP (sizeof(DS18B20_SENSORS)/sizeof(DS18B20_SENSORS[0]) )
@@ -63,7 +67,7 @@ static osjob_t sendjob;
 SSD1306Wire * getDisplay(){
 	static SSD1306Wire * pDisplay = 0;
 	if( pDisplay == 0 )
-		pDisplay = new SSD1306Wire(0x3c, SDA_OLED, SCL_OLED, RST_OLED, GEOMETRY_64_32);
+		pDisplay = new SSD1306Wire(0x3c, MY_OLED_SDA, MY_OLED_SCL, GEOMETRY_128_64);
 	return pDisplay;
 }
 
@@ -182,7 +186,7 @@ void goToDeepSleep(){
    if( firstRun() )
 	   delay(5000u);
 
-   digitalWrite(RST_OLED, LOW);
+   //digitalWrite(RST_OLED, LOW);
    pinMode(MY_ONEWIRE_PIN,OUTPUT);
    digitalWrite(MY_ONEWIRE_PIN, LOW);
 
@@ -191,7 +195,7 @@ void goToDeepSleep(){
    if( bootCount < 15 ) //first 10 times run go to sleep only for 60s - useful for installation process
 	   esp_sleep_enable_timer_wakeup(60 * uS_TO_S_FACTOR - delta * mS_TO_S_FACTOR);
    else
-	   esp_sleep_enable_timer_wakeup(TIME_BETWEEN_MEASUREMENTS * uS_TO_S_FACTOR - delta * mS_TO_S_FACTOR);
+	   esp_sleep_enable_timer_wakeup((unsigned long long)TIME_BETWEEN_MEASUREMENTS * uS_TO_S_FACTOR - delta * mS_TO_S_FACTOR);
    VextOFF();
    esp_deep_sleep_start();
 }
@@ -327,7 +331,7 @@ void readDS18B20Sensors(){
 		    Serial.println("};");
 		}
 	    for(uint8_t i=0; i < N_TEMP ; i++){
-			 memcpy(addr, DS18B20_SENSORS[i], sizeof(addr));
+			 memcpy((void*)addr, (const void*)DS18B20_SENSORS[i], (unsigned)sizeof(addr));
 			 Serial.print("T"+String(i+1)+ " @ds18b20 ");
 			 printAddress(addr);
 			 if(ds18b20.isConnected(addr) ){
@@ -391,7 +395,7 @@ void initLoRaWAN(u4_t seqNo) {
 	LMIC_reset();
 	LMIC_setClockError(MAX_CLOCK_ERROR * 3 / 100);
 	// Set static session parameters. TTN network has id 0x13
-	LMIC_setSession(0x13, DEVADDR, NWKSKEY, APPSKEY);
+	LMIC_setSession((unsigned)0x13, DEVADDR, NWKSKEY, APPSKEY);
 
 	LMIC_setSeqnoUp(seqNo);
 	//(bootCount);
