@@ -41,9 +41,9 @@
 
 
 
-#define MY_ONEWIRE_PIN  2
-#define MY_OLED_SDA 12
-#define MY_OLED_SCL 15
+#define MY_ONEWIRE_PIN  4
+#define MY_OLED_SDA 15
+#define MY_OLED_SCL 2
 
 
 // Data Variable for Temperature
@@ -61,8 +61,11 @@ void os_getArtEui (u1_t* buf) { }
 void os_getDevEui (u1_t* buf) { }
 void os_getDevKey (u1_t* buf) { }
 
+
+/*
 static osjob_t sendjob;
 
+//*/
 
 SSD1306Wire * getDisplay(){
 	static SSD1306Wire * pDisplay = 0;
@@ -70,6 +73,8 @@ SSD1306Wire * getDisplay(){
 		pDisplay = new SSD1306Wire(0x3c, MY_OLED_SDA, MY_OLED_SCL, GEOMETRY_128_64);
 	return pDisplay;
 }
+
+
 
 
 Adafruit_BME280 * getBme(){
@@ -81,13 +86,13 @@ Adafruit_BME280 * getBme(){
 
 
 void LedON(){
-//	pinMode(LED_BUILTIN,OUTPUT);
-//	digitalWrite(LED_BUILTIN, HIGH);
+	pinMode(LED_BUILTIN,OUTPUT);
+	digitalWrite(LED_BUILTIN, HIGH);
 }
 
 void LedOFF(){
-//	pinMode(LED_BUILTIN,OUTPUT);
-//	digitalWrite(LED_BUILTIN, LOW);
+	pinMode(LED_BUILTIN,OUTPUT);
+	digitalWrite(LED_BUILTIN, LOW);
 }
 
 
@@ -116,12 +121,15 @@ void ResetDisplay()
 
 
 // Pin mapping for Heltec Wireless Stick (taken from bastelgarage.ch, confirmed working)
+/*
 const lmic_pinmap lmic_pins = {
     .nss = 18,
     .rxtx = LMIC_UNUSED_PIN,
     .rst = 14,
     .dio = {26, 34 , 35 }
 };
+
+*/
 
 unsigned long startTime, endTime;
 uint8_t sessionStatus = 0;
@@ -177,7 +185,7 @@ bool firstRun()
 
 void goToDeepSleep(){
 
-   LMIC_shutdown();
+ //  LMIC_shutdown();
    unsigned long delta = millis() - startTime;
    Serial.println("Work time: "+String(delta)+"ms");
    Serial.println("Going to sleep now");
@@ -247,8 +255,8 @@ void pushTemperatureToMessage(std::vector<uint8_t> & vect, float fTemperature){
 
 void do_send(osjob_t* j, void(*callBack)(void *, int)){
 
-	getDisplay()->drawString (0, 15, "0x"+ String(sessionStatus,16));
-	getDisplay()->display();
+	//getDisplay()->drawString (0, 15, "0x"+ String(sessionStatus,16));
+	//getDisplay()->display();
 	if( firstRun() || DEVICE_ID==0x03 ){
 		//don't send anything once in the first  after turning on
 		LedON();
@@ -313,7 +321,7 @@ void readDS18B20Sensors(){
 	ds18b20.setResolution(12);
 	ds18b20.setCheckForConversion(false);
 	ds18b20.requestTemperatures();
-	delay(200u);
+	delay(800u);
 	 uint8_t n = ds18b20.getDS18Count();
 
 	 if( n > 0 ){
@@ -387,7 +395,7 @@ void readBME280Sensor(){
 	}
 
 }
-
+//*/
 void initLoRaWAN(u4_t seqNo) {
 	// LMIC init
 	os_init_ex(&lmic_pins);
@@ -440,8 +448,6 @@ void initLoRaWAN(u4_t seqNo) {
 
 void setup() {
 	startTime = millis();
-	//esp_wifi_start();
-	//esp_wifi_stop();
 	esp_bt_controller_disable();
 	resetStatus();
 	VextON();
@@ -459,21 +465,27 @@ void setup() {
 	Serial.print(String((unsigned)TIME_BETWEEN_MEASUREMENTS/60) + "m ");
 	Serial.println(String((unsigned)TIME_BETWEEN_MEASUREMENTS%60) + "s ");
 
+
 	getDisplay()->init();
 	getDisplay()->setFont(ArialMT_Plain_10);
 	getDisplay()->drawString(0, 0, "#"+String(DEVICE_ID));
 	getDisplay()->display();
+//*/
 
 	//ds18b20 must be read before other init, in particular before i2c devices
     readDS18B20Sensors();
-	initLoRaWAN(bootCount);
+
+	//initLoRaWAN(bootCount);
     readBME280Sensor();
     readBatteryVoltage();
-    do_send(&sendjob, afterLoraPacketSent);
+    goToDeepSleep();
+
+    //do_send(&sendjob, afterLoraPacketSent);
+
 }
 
 
 void loop() {
 	//will not be called after the deepsleep wake up
-     os_runloop_once();
+    // os_runloop_once();
 }
