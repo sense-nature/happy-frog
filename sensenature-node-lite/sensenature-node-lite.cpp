@@ -62,7 +62,7 @@ void os_getDevEui (u1_t* buf) { }
 void os_getDevKey (u1_t* buf) { }
 
 
-/*
+
 static osjob_t sendjob;
 
 //*/
@@ -75,13 +75,28 @@ SSD1306Wire * getDisplay(){
 }
 
 
-
+static Adafruit_BME280 * pBme =0;
 
 Adafruit_BME280 * getBme(){
-	static Adafruit_BME280 * pBme =0;
-	if(pBme == 0 )
+
+	if(pBme == 0 ){
 		pBme = new Adafruit_BME280();
+		//set the low power mode for weather monitoring
+		pBme->setSampling(Adafruit_BME280::sensor_mode::MODE_FORCED
+				, Adafruit_BME280::sensor_sampling::SAMPLING_X1
+				, Adafruit_BME280::sensor_sampling::SAMPLING_X1
+				, Adafruit_BME280::sensor_sampling::SAMPLING_X1
+				,Adafruit_BME280::sensor_filter::FILTER_OFF);
+	}
 	return pBme;
+}
+
+void endBme(){
+	if( pBme != 0 ){
+		pBme->MODE_SLEEP
+		delete pBme;
+		pBme = 0;
+	}
 }
 
 
@@ -121,15 +136,15 @@ void ResetDisplay()
 
 
 // Pin mapping for Heltec Wireless Stick (taken from bastelgarage.ch, confirmed working)
-/*
+
 const lmic_pinmap lmic_pins = {
     .nss = 18,
     .rxtx = LMIC_UNUSED_PIN,
     .rst = 14,
-    .dio = {26, 34 , 35 }
+    .dio = {26,  35 , 34}
 };
 
-*/
+//*/
 
 unsigned long startTime, endTime;
 uint8_t sessionStatus = 0;
@@ -191,14 +206,18 @@ void goToDeepSleep(){
    Serial.println("Going to sleep now");
    Serial.flush();
    LedOFF();
+   //from https://github.com/Heltec-Aaron-Lee/WiFi_Kit_series/issues/6#issuecomment-518896314
+   pinMode(14,INPUT);
+
    if( firstRun() )
 	   delay(5000u);
 
-   //digitalWrite(RST_OLED, LOW);
-   pinMode(MY_ONEWIRE_PIN,OUTPUT);
-   digitalWrite(MY_ONEWIRE_PIN, LOW);
+   getDisplay()->end();
+   endBme();
+   //rtc_gpio_isolate(MY_OLED_SDA);
 
-
+   //  pinMode(MY_ONEWIRE_PIN,OUTPUT);
+   //  digitalWrite(MY_ONEWIRE_PIN, LOW);
 
    if( bootCount < 15 ) //first 10 times run go to sleep only for 60s - useful for installation process
 	   esp_sleep_enable_timer_wakeup(60 * uS_TO_S_FACTOR - delta * mS_TO_S_FACTOR);
@@ -208,22 +227,6 @@ void goToDeepSleep(){
    esp_deep_sleep_start();
 }
 
-
-void afterLoraPacketSent(void *pUserData, int fSuccess){
-   // Heltec.display->clear();
-  Serial.write("Sending result: ");
-   if( fSuccess){
-	   //getDisplay()->drawString (20, 0, " SENT");
-	   Serial.println("OK");
-   } else {
-	   //getDisplay()->drawString (20, 0, " FAILED");
-	   Serial.println("FAILED");
-   }
-   // Schedule next transmission
-   //os_setTimedCallback(&sendjob, os_getTime()+sec2osticks(TX_INTERVAL), do_send);
-   goToDeepSleep();
-
-}
 
 uint8_t getHigh(int16_t val){
 
@@ -253,16 +256,32 @@ void pushTemperatureToMessage(std::vector<uint8_t> & vect, float fTemperature){
 	push2BytesToMessage(vect, iTemp);
 }
 
+
+
+
+void afterLoraPacketSent(void *pUserData, int fSuccess){
+   // Heltec.display->clear();
+  Serial.write("Sending result: ");
+   if( fSuccess){
+	   getDisplay()->drawString (20, 0, " SENT");
+	   Serial.println("OK");
+   } else {
+	   getDisplay()->drawString (20, 0, " FAILED");
+	   Serial.println("FAILED");
+   }
+   goToDeepSleep();
+}
+
 void do_send(osjob_t* j, void(*callBack)(void *, int)){
 
-	//getDisplay()->drawString (0, 15, "0x"+ String(sessionStatus,16));
-	//getDisplay()->display();
-	if( firstRun() || DEVICE_ID==0x03 ){
+	getDisplay()->drawString (0, 15, "0x"+ String(sessionStatus,16));
+	getDisplay()->display();
+	if( firstRun() ){
 		//don't send anything once in the first  after turning on
 		LedON();
 		Serial.println("Skipping sending packet #"+ String (bootCount));
 		goToDeepSleep();
-	} else {
+	} else	{
 		// Payload to send (uplink)
 		uint8_t serialNo = DEVICE_ID;
 		std::vector<uint8_t> message;
@@ -358,6 +377,10 @@ void readDS18B20Sensors(){
 			 setStatusDS18B20Error(i);
 		 Serial.println("No ds18b20 detected on the bus");
 	 }
+	 pinMode(MY_ONEWIRE_PIN,OUTPUT);
+    digitalWrite(MY_ONEWIRE_PIN, LOW);
+
+
 }
 void readBatteryVoltage()
 {
@@ -438,54 +461,56 @@ void initLoRaWAN(u4_t seqNo) {
 	// Set data rate and transmit power for uplink (note: txpow seems to be ignored by the library)
 	//LMIC_setDrTxpow(DR_SF11,14);
 	//LMIC_setDrTxpow(DR_SF9,14);
-	LMIC_setDrTxpow(DR_SF7, 14);
+	LMIC_setDrTxpow(DR_SF9, 14);
 	LMIC_startJoining();
 }
 
+void startDisplay() {
+	getDisplay()->init();
+	getDisplay()->setFont(ArialMT_Plain_10);
+	getDisplay()->drawString(0, 0, "#" + String(DEVICE_ID));
+	getDisplay()->display();
+}
 
-
-
+void logStartOfCycle() {
+	Serial.begin(115200ul);
+	Serial.flush();
+	delay(50ul);
+	Serial.println();
+	Serial.println(
+			"Device: [" + String(DEVICE_NAME) + "],  ID=" + String(DEVICE_ID));
+	Serial.println("Wake up #" + String(bootCount));
+	Serial.println("WU Reason: " + String(get_wakeup_reason()));
+	Serial.println("Session status with WU reason : " + String(sessionStatus));
+	Serial.print("Time between measurements: ");
+	Serial.print(String((unsigned) (TIME_BETWEEN_MEASUREMENTS) / 60) + "m ");
+	Serial.println(String((unsigned) (TIME_BETWEEN_MEASUREMENTS) % 60) + "s ");
+}
 
 void setup() {
 	startTime = millis();
 	esp_bt_controller_disable();
 	resetStatus();
-	VextON();
+
 	bootCount++;
-	Serial.begin(115200ul);
-	Serial.flush();
-	delay(50ul);
-	Serial.println();
-	Serial.println("Device: ["+String(DEVICE_NAME)+"],  ID="+String(DEVICE_ID));
-	Serial.println("Wake up #"+ String(bootCount));
-	Serial.println("WU Reason: " + String(get_wakeup_reason()));
-	Serial.println("Session status with WU reason : "+String(sessionStatus));
+	VextON();
+	initLoRaWAN(bootCount);
 
-	Serial.print("Time between measurements: ");
-	Serial.print(String((unsigned)TIME_BETWEEN_MEASUREMENTS/60) + "m ");
-	Serial.println(String((unsigned)TIME_BETWEEN_MEASUREMENTS%60) + "s ");
-
-
-	getDisplay()->init();
-	getDisplay()->setFont(ArialMT_Plain_10);
-	getDisplay()->drawString(0, 0, "#"+String(DEVICE_ID));
-	getDisplay()->display();
+    logStartOfCycle();
+	startDisplay();
 //*/
 
 	//ds18b20 must be read before other init, in particular before i2c devices
     readDS18B20Sensors();
 
-	//initLoRaWAN(bootCount);
     readBME280Sensor();
     readBatteryVoltage();
-    goToDeepSleep();
 
-    //do_send(&sendjob, afterLoraPacketSent);
-
+    do_send(&sendjob, afterLoraPacketSent);
 }
 
 
 void loop() {
-	//will not be called after the deepsleep wake up
-    // os_runloop_once();
+	//let the LMIC library handle the events
+     os_runloop_once();
 }
