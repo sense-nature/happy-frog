@@ -75,29 +75,6 @@ SSD1306Wire * getDisplay(){
 }
 
 
-static Adafruit_BME280 * pBme =0;
-
-Adafruit_BME280 * getBme(){
-
-	if(pBme == 0 ){
-		pBme = new Adafruit_BME280();
-		//set the low power mode for weather monitoring
-		pBme->setSampling(Adafruit_BME280::sensor_mode::MODE_FORCED
-				, Adafruit_BME280::sensor_sampling::SAMPLING_X1
-				, Adafruit_BME280::sensor_sampling::SAMPLING_X1
-				, Adafruit_BME280::sensor_sampling::SAMPLING_X1
-				,Adafruit_BME280::sensor_filter::FILTER_OFF);
-	}
-	return pBme;
-}
-
-void endBme(){
-	if( pBme != 0 ){
-		pBme->MODE_SLEEP
-		delete pBme;
-		pBme = 0;
-	}
-}
 
 
 void LedON(){
@@ -213,7 +190,7 @@ void goToDeepSleep(){
 	   delay(5000u);
 
    getDisplay()->end();
-   endBme();
+ //  endBme();
    //rtc_gpio_isolate(MY_OLED_SDA);
 
    //  pinMode(MY_ONEWIRE_PIN,OUTPUT);
@@ -395,23 +372,35 @@ void readBatteryVoltage()
 }
 
 void readBME280Sensor(){
-	bool status = getBme()->begin(0x76, &Wire);
+
+	Adafruit_BME280 bme;
+
+			//set the low power mode for weather monitoring
+
+	bool status = bme.begin(0x76, &Wire);
+
 	if (!status) {
 		Serial.println("Could not find a valid BME280 sensor, check wiring, address, sensor ID!");
 		setStatusBME280Error();
 	} else {
-		boxTemperature = getBme()->readTemperature();
+		bme.setSampling(Adafruit_BME280::sensor_mode::MODE_FORCED
+						, Adafruit_BME280::sensor_sampling::SAMPLING_X1
+						, Adafruit_BME280::sensor_sampling::SAMPLING_X1
+						, Adafruit_BME280::sensor_sampling::SAMPLING_X1
+						,Adafruit_BME280::sensor_filter::FILTER_OFF);
+
+		boxTemperature = bme.readTemperature();
 		Serial.print("Temperature = ");
 		Serial.print(boxTemperature);
 		Serial.println(" *C");
 
 		Serial.print("Pressure = ");
 
-		boxPressure = roundf(getBme()->readPressure() / 100.0F);
+		boxPressure = roundf(bme.readPressure() / 100.0F);
 		Serial.print(boxPressure);
 		Serial.println(" hPa");
 
-		boxHumidity = roundf(getBme()->readHumidity());
+		boxHumidity = roundf(bme.readHumidity());
 		Serial.print("Humidity = ");
 		Serial.print(boxHumidity);
 		Serial.println(" %");
@@ -495,8 +484,9 @@ void setup() {
 	bootCount++;
 	VextON();
 	initLoRaWAN(bootCount);
-
+	Wire.begin(MY_OLED_SDA,MY_OLED_SCL);
     logStartOfCycle();
+
 	startDisplay();
 //*/
 
