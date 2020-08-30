@@ -177,7 +177,12 @@ bool firstRun()
 
 void goToDeepSleep(){
 
- //  LMIC_shutdown();
+
+	if( firstRun() )
+		   delay(5000u);
+	else
+		 LMIC_shutdown();
+
    unsigned long delta = millis() - startTime;
    Serial.println("Work time: "+String(delta)+"ms");
    Serial.println("Going to sleep now");
@@ -186,8 +191,6 @@ void goToDeepSleep(){
    //from https://github.com/Heltec-Aaron-Lee/WiFi_Kit_series/issues/6#issuecomment-518896314
    pinMode(14,INPUT);
 
-   if( firstRun() )
-	   delay(5000u);
 
    getDisplay()->end();
  //  endBme();
@@ -240,19 +243,23 @@ void afterLoraPacketSent(void *pUserData, int fSuccess){
    // Heltec.display->clear();
   Serial.write("Sending result: ");
    if( fSuccess){
-	   getDisplay()->drawString (20, 0, " SENT");
+	   getDisplay()->drawString (0,33, " SENT");
 	   Serial.println("OK");
    } else {
-	   getDisplay()->drawString (20, 0, " FAILED");
+	   getDisplay()->drawString (0, 33," FAILED");
 	   Serial.println("FAILED");
    }
+   getDisplay()->display();
+  // sleep(5000u);
    goToDeepSleep();
 }
 
 void do_send(osjob_t* j, void(*callBack)(void *, int)){
 
-	getDisplay()->drawString (0, 15, "0x"+ String(sessionStatus,16));
+	getDisplay()->drawString(0, 11, "#" + String(bootCount));
+	getDisplay()->drawString (0, 22, "0x"+ String(sessionStatus,16));
 	getDisplay()->display();
+
 	if( firstRun() ){
 		//don't send anything once in the first  after turning on
 		LedON();
@@ -341,7 +348,7 @@ void readDS18B20Sensors(){
 			 if(ds18b20.isConnected(addr) ){
 				 temp[i] = ds18b20.getTempC(addr);
 				 Serial.println(": " + String(temp[i]) + " *C");
-				 getDisplay()->drawString(22, i*10, String(i+1) + ": "+ String(temp[i]));
+				 getDisplay()->drawString(35, i*10, String(i+1) + ": "+ String(temp[i]));
 				 getDisplay()->display();
 			 } else{
 				 setStatusDS18B20Error(i);
@@ -450,14 +457,15 @@ void initLoRaWAN(u4_t seqNo) {
 	// Set data rate and transmit power for uplink (note: txpow seems to be ignored by the library)
 	//LMIC_setDrTxpow(DR_SF11,14);
 	//LMIC_setDrTxpow(DR_SF9,14);
-	LMIC_setDrTxpow(DR_SF9, 14);
+	LMIC_setDrTxpow(DR_SF10, 14);
 	LMIC_startJoining();
 }
 
 void startDisplay() {
 	getDisplay()->init();
 	getDisplay()->setFont(ArialMT_Plain_10);
-	getDisplay()->drawString(0, 0, "#" + String(DEVICE_ID));
+	getDisplay()->drawString(0, 0, "bufo" + String(DEVICE_ID));
+	getDisplay()->drawString(0, 0, "bufo" + String(DEVICE_ID));
 	getDisplay()->display();
 }
 
@@ -484,7 +492,7 @@ void setup() {
 	bootCount++;
 	VextON();
 	initLoRaWAN(bootCount);
-	Wire.begin(MY_OLED_SDA,MY_OLED_SCL);
+	//Wire.begin(MY_OLED_SDA,MY_OLED_SCL);
     logStartOfCycle();
 
 	startDisplay();
