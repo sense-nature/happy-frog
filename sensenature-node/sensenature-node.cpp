@@ -182,9 +182,12 @@ void goToDeepSleep(){
    if( firstRun() )
 	   delay(5000u);
 
+   getDisplay()->end();
+
    digitalWrite(RST_OLED, LOW);
    pinMode(MY_ONEWIRE_PIN,OUTPUT);
    digitalWrite(MY_ONEWIRE_PIN, LOW);
+
 
 
 
@@ -242,8 +245,8 @@ void pushTemperatureToMessage(std::vector<uint8_t> & vect, float fTemperature){
 }
 
 void do_send(osjob_t* j, void(*callBack)(void *, int)){
-
-	getDisplay()->drawString (0, 15, "0x"+ String(sessionStatus,16));
+	getDisplay()->drawString(0, 11, "#" + String(bootCount));
+	getDisplay()->drawString (0, 22, "0x"+ String(sessionStatus,16));
 	getDisplay()->display();
 	if( firstRun() || DEVICE_ID==0x03 ){
 		//don't send anything once in the first  after turning on
@@ -330,15 +333,19 @@ void readDS18B20Sensors(){
 			 memcpy(addr, DS18B20_SENSORS[i], sizeof(addr));
 			 Serial.print("T"+String(i+1)+ " @ds18b20 ");
 			 printAddress(addr);
+			 String present = "-";
 			 if(ds18b20.isConnected(addr) ){
 				 temp[i] = ds18b20.getTempC(addr);
 				 Serial.println(": " + String(temp[i]) + " *C");
-				 getDisplay()->drawString(22, i*10, String(i+1) + ": "+ String(temp[i]));
-				 getDisplay()->display();
+				 present = "+";
 			 } else{
 				 setStatusDS18B20Error(i);
 				 Serial.println(" - sensor not connected");
 			 }
+			 getDisplay()->drawString(29+(i/4)*15, (i*7)%28, String(i+1) + present);
+			 getDisplay()->display();
+
+
 	    }
 
 	 } else {
@@ -426,7 +433,7 @@ void initLoRaWAN(u4_t seqNo) {
 	// Set data rate and transmit power for uplink (note: txpow seems to be ignored by the library)
 	//LMIC_setDrTxpow(DR_SF11,14);
 	//LMIC_setDrTxpow(DR_SF9,14);
-	LMIC_setDrTxpow(DR_SF7, 14);
+	LMIC_setDrTxpow(DR_SF10, 14);
 	LMIC_startJoining();
 }
 
@@ -457,7 +464,7 @@ void setup() {
 
 	getDisplay()->init();
 	getDisplay()->setFont(ArialMT_Plain_10);
-	getDisplay()->drawString(0, 0, "#"+String(DEVICE_ID));
+	getDisplay()->drawString(0, 0, "bufo"+String(DEVICE_ID));
 	getDisplay()->display();
 
 	//ds18b20 must be read before other init, in particular before i2c devices
